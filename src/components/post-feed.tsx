@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, ZoomIn } from "lucide-react";
+import { ImageViewer } from "@/components/ui/image-viewer";
 import { PostCard } from "@/components/ui/post-card";
 import { TabSwitcher } from "@/components/ui/tab-switcher";
 import type { Post, PostType, TimelineFilter } from "@/types/post";
@@ -17,6 +18,7 @@ type PostFeedProps = {
   onPostClick: (postId: string) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
+  onPostDelete: (postId: string) => Promise<boolean>;
   isBooting: boolean;
   header?: ReactNode;
 };
@@ -32,6 +34,128 @@ const timelineTabs: Array<{ label: string; value: TimelineFilter }> = [
 const INITIAL_VISIBLE_ITEMS = 18;
 const VISIBLE_ITEMS_STEP = 12;
 
+type MediaItem = {
+  post: Post;
+  url: string;
+  imageIndex: number;
+  mediaKey: string;
+};
+
+const SWIPE_DELETE_THRESHOLD = 96;
+const SWIPE_MAX_OFFSET = -140;
+const SWIPE_VERTICAL_LOCK = 10;
+
+type SwipeablePostCardProps = {
+  post: Post;
+  children: ReactNode;
+  onOpen: () => void;
+  onDelete: (post: Post) => void;
+};
+
+function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCardProps) {
+  const [offsetX, setOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const suppressNextClickRef = useRef(false);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    lockedAxis: "x" | "y" | null;
+    moved: boolean;
+  } | null>(null);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select")) return;
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lockedAxis: null,
+      moved: false,
+    };
+    setIsDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - dragState.startX;
+    const deltaY = event.clientY - dragState.startY;
+
+    if (!dragState.lockedAxis) {
+      if (Math.abs(deltaY) > SWIPE_VERTICAL_LOCK && Math.abs(deltaY) > Math.abs(deltaX)) {
+        dragState.lockedAxis = "y";
+      } else if (Math.abs(deltaX) > SWIPE_VERTICAL_LOCK && Math.abs(deltaX) > Math.abs(deltaY)) {
+        dragState.lockedAxis = "x";
+      }
+    }
+
+    if (dragState.lockedAxis !== "x") return;
+    event.preventDefault();
+    dragState.moved = true;
+    suppressNextClickRef.current = true;
+    setOffsetX(Math.max(SWIPE_MAX_OFFSET, Math.min(0, deltaX)));
+  };
+
+  const finishSwipe = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    dragStateRef.current = null;
+    setIsDragging(false);
+
+    if (offsetX <= -SWIPE_DELETE_THRESHOLD) {
+      suppressNextClickRef.current = true;
+      setOffsetX(SWIPE_MAX_OFFSET);
+      window.setTimeout(() => onDelete(post), 140);
+      return;
+    }
+
+    setOffsetX(0);
+  };
+
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select")) return;
+
+    if (suppressNextClickRef.current || offsetX !== 0) {
+      suppressNextClickRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+      setOffsetX(0);
+      return;
+    }
+
+    onOpen();
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-xl">
+      <div className="absolute inset-y-0 right-4 flex items-center">
+        <div className="flex h-12 w-20 items-center justify-center rounded-full bg-red-500 text-white shadow-sm">
+          <Trash2 size={22} />
+        </div>
+      </div>
+      <div
+        className={`relative touch-pan-y ${isDragging ? "" : "transition-transform duration-200 ease-out"}`}
+        style={{ transform: `translateX(${offsetX}px)` }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishSwipe}
+        onPointerCancel={finishSwipe}
+        onClick={handleClick}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function PostFeed({
   posts,
   activeTab,
@@ -43,14 +167,19 @@ export function PostFeed({
   onPostClick,
   onPostTypeChange,
   onPostOgpFetched,
+  onPostDelete,
   isBooting,
   header,
 }: PostFeedProps) {
   const tagScrollRef = useRef<HTMLDivElement>(null);
   const postsContainerRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLButtonElement>(null);
+  const mediaItemRefs = useRef(new Map<string, HTMLImageElement>());
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [mediaViewerIndex, setMediaViewerIndex] = useState<number | null>(null);
+  const [pendingDeletedPosts, setPendingDeletedPosts] = useState<Record<string, Post>>({});
+  const [latestPendingDeleteId, setLatestPendingDeleteId] = useState<string | null>(null);
   const [visibleItemsState, setVisibleItemsState] = useState({
     key: "",
     count: INITIAL_VISIBLE_ITEMS,
@@ -59,15 +188,20 @@ export function PostFeed({
   const visibleItemCount = visibleItemsState.key === listAnimationKey
     ? visibleItemsState.count
     : INITIAL_VISIBLE_ITEMS;
-  const mediaItems = useMemo(() => {
+  const mediaItems = useMemo<MediaItem[]>(() => {
     return posts.flatMap((post) => {
       const urls = postImageUrlMap[post.id] || [];
-      return urls.map((url, index) => ({ post, url, index }));
+      return urls.map((url, imageIndex) => ({
+        post,
+        url,
+        imageIndex,
+        mediaKey: `${post.id}-${imageIndex}`,
+      }));
     });
   }, [postImageUrlMap, posts]);
   const visiblePosts = useMemo(
-    () => posts.slice(0, visibleItemCount),
-    [posts, visibleItemCount],
+    () => posts.filter((post) => !pendingDeletedPosts[post.id]).slice(0, visibleItemCount),
+    [pendingDeletedPosts, posts, visibleItemCount],
   );
   const visibleMediaItems = useMemo(
     () => mediaItems.slice(0, visibleItemCount),
@@ -75,6 +209,8 @@ export function PostFeed({
   );
   const totalItemCount = activeTab === "media" ? mediaItems.length : posts.length;
   const hasMoreItems = visibleItemCount < totalItemCount;
+  const deleteTimersRef = useRef(new Map<string, number>());
+  const latestPendingPost = latestPendingDeleteId ? pendingDeletedPosts[latestPendingDeleteId] : null;
   const orderedTags = useMemo(() => {
     if (!activeTag) return availableTags;
     return [activeTag, ...availableTags.filter((tag) => tag !== activeTag)];
@@ -126,6 +262,62 @@ export function PostFeed({
       ),
     }));
   }, [listAnimationKey, totalItemCount]);
+  const openMediaViewer = (event: React.MouseEvent, itemIndex: number) => {
+    event.stopPropagation();
+    setMediaViewerIndex(itemIndex);
+  };
+  const commitPendingDelete = useCallback(async (postId: string) => {
+    deleteTimersRef.current.delete(postId);
+    const deleted = await onPostDelete(postId);
+    if (!deleted) {
+      setPendingDeletedPosts((current) => {
+        const next = { ...current };
+        delete next[postId];
+        return next;
+      });
+    }
+    setLatestPendingDeleteId((current) => (current === postId ? null : current));
+  }, [onPostDelete]);
+  const requestDeletePost = useCallback((post: Post) => {
+    if (deleteTimersRef.current.has(post.id)) return;
+
+    setPendingDeletedPosts((current) => ({ ...current, [post.id]: post }));
+    setLatestPendingDeleteId(post.id);
+    const timer = window.setTimeout(() => {
+      void commitPendingDelete(post.id);
+    }, 5000);
+    deleteTimersRef.current.set(post.id, timer);
+  }, [commitPendingDelete]);
+  const undoLatestDelete = () => {
+    if (!latestPendingDeleteId) return;
+
+    const timer = deleteTimersRef.current.get(latestPendingDeleteId);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      deleteTimersRef.current.delete(latestPendingDeleteId);
+    }
+    setPendingDeletedPosts((current) => {
+      const next = { ...current };
+      delete next[latestPendingDeleteId];
+      return next;
+    });
+    setLatestPendingDeleteId(null);
+  };
+  const getMediaOriginRect = useCallback((index: number) => {
+    const item = visibleMediaItems[index];
+    if (!item) return null;
+
+    const image = mediaItemRefs.current.get(item.mediaKey);
+    if (!image) return null;
+
+    const rect = image.getBoundingClientRect();
+    return {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+  }, [visibleMediaItems]);
 
   useEffect(() => {
     updateTagScrollButtons();
@@ -137,6 +329,14 @@ export function PostFeed({
     const handleTimelineTop = () => animateTimelineTopFromNearTop();
     window.addEventListener("bocchi:timeline-top", handleTimelineTop);
     return () => window.removeEventListener("bocchi:timeline-top", handleTimelineTop);
+  }, []);
+
+  useEffect(() => {
+    const deleteTimers = deleteTimersRef.current;
+    return () => {
+      deleteTimers.forEach((timer) => window.clearTimeout(timer));
+      deleteTimers.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -238,15 +438,37 @@ export function PostFeed({
             まだ投稿がありません。
           </div>
         ) : activeTab === "media" ? (
-          <div key={listAnimationKey} className="columns-2 gap-2 space-y-2 sm:columns-3">
-            {visibleMediaItems.map(({ post, url, index }) => (
+          <div key={listAnimationKey} className="timeline-list-swap columns-2 gap-2 space-y-2 sm:columns-3">
+            {visibleMediaItems.map(({ post, url, mediaKey }, itemIndex) => (
               <div
-                key={`${post.id}-${index}`}
-                className="timeline-media-shell relative cursor-pointer break-inside-avoid overflow-hidden rounded-xl transition-opacity hover:opacity-90"
+                key={mediaKey}
+                className="timeline-media-shell group relative cursor-pointer break-inside-avoid overflow-hidden rounded-xl transition-opacity hover:opacity-90"
                 onClick={() => onPostClick(post.id)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="media" loading="lazy" decoding="async" className="w-full h-auto object-cover" />
+                <img
+                  ref={(node) => {
+                    if (node) {
+                      mediaItemRefs.current.set(mediaKey, node);
+                    } else {
+                      mediaItemRefs.current.delete(mediaKey);
+                    }
+                  }}
+                  src={url}
+                  alt="media"
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-auto object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={(event) => openMediaViewer(event, itemIndex)}
+                  className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm transition hover:bg-black/75 active:scale-95"
+                  aria-label="画像を連続表示"
+                  title="画像を連続表示"
+                >
+                  <ZoomIn size={15} />
+                </button>
               </div>
             ))}
             {hasMoreItems && (
@@ -264,21 +486,22 @@ export function PostFeed({
           <div
             key={listAnimationKey}
             ref={postsContainerRef}
-            className="flex flex-col gap-4"
+            className="timeline-list-swap flex flex-col gap-4"
           >
             {visiblePosts.map((post) => (
               <div
                 key={post.id}
                 className="timeline-card-shell"
               >
-                <PostCard
-                  post={post}
-                  imageUrls={postImageUrlMap[post.id]}
-                  onClick={() => onPostClick(post.id)}
-                  onTagClick={handleTagChange}
-                  onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
-                  onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
-                />
+                <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
+                  <PostCard
+                    post={post}
+                    imageUrls={postImageUrlMap[post.id]}
+                    onTagClick={handleTagChange}
+                    onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
+                    onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
+                  />
+                </SwipeablePostCard>
               </div>
             ))}
             {hasMoreItems && (
@@ -294,6 +517,28 @@ export function PostFeed({
           </div>
         )}
       </div>
+      {mediaViewerIndex !== null && (
+        <ImageViewer
+          images={visibleMediaItems.map((item) => item.url)}
+          initialIndex={mediaViewerIndex}
+          getOriginRect={getMediaOriginRect}
+          onClose={() => setMediaViewerIndex(null)}
+        />
+      )}
+      {latestPendingPost && (
+        <div className="fixed inset-x-0 bottom-24 z-50 mx-auto flex w-full max-w-md justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto flex w-full items-center justify-between gap-3 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white shadow-xl">
+            <span className="min-w-0 truncate">1件削除しました</span>
+            <button
+              type="button"
+              onClick={undoLatestDelete}
+              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold text-cyan-300 underline underline-offset-4 transition hover:bg-white/10 active:scale-95"
+            >
+              元に戻す
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { postsRepository } from "@/lib/postsRepository";
 import type { OgpPreview, Post, PostRecordInput, TimelineFilter } from "@/types/post";
 
+const HIDE_POSTED_IN_SOURCE_TABS_KEY = "bocchisns_hide_posted_in_source_tabs";
+
 export type PostFormValue = {
   type: Post["type"];
+  postedFrom?: Post["postedFrom"];
   body: string;
   url: string;
   ogp?: OgpPreview;
@@ -26,6 +29,7 @@ const postImageUrlListCache = new Map<string, { key: string; urls: string[] }>()
 function toRecordInput(value: PostFormValue): PostRecordInput {
   return {
     type: value.type,
+    postedFrom: value.postedFrom,
     body: value.body.trim(),
     url: value.url.trim() || undefined,
     ogp: value.url.trim() ? value.ogp : undefined,
@@ -40,6 +44,7 @@ function toRecordInput(value: PostFormValue): PostRecordInput {
 function fromPost(post: Post): PostFormValue {
   return {
     type: post.type,
+    postedFrom: post.postedFrom,
     body: post.body,
     url: post.url ?? "",
     ogp: post.ogp,
@@ -51,6 +56,14 @@ function fromPost(post: Post): PostFormValue {
 export function usePosts() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeTab, setActiveTab] = useState<TimelineFilter>("all");
+  const [hidePostedInSourceTabs, setHidePostedInSourceTabsState] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(HIDE_POSTED_IN_SOURCE_TABS_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string>("");
@@ -74,19 +87,35 @@ export function usePosts() {
   }, []);
 
   useEffect(() => {
-    loadPosts();
+    const loadTimer = setTimeout(() => {
+      void loadPosts();
+    }, 0);
+    return () => clearTimeout(loadTimer);
   }, [loadPosts]);
+
+  const setHidePostedInSourceTabs = useCallback((nextValue: boolean) => {
+    setHidePostedInSourceTabsState(nextValue);
+    try {
+      localStorage.setItem(HIDE_POSTED_IN_SOURCE_TABS_KEY, String(nextValue));
+    } catch {}
+  }, []);
 
   // フィルタリング
   const tabFilteredPosts = useMemo(() => {
     switch (activeTab) {
-      case "post": return posts.filter((p) => p.type === "post");
-      case "clip": return posts.filter((p) => p.type === "clip");
+      case "post":
+        return posts.filter((p) =>
+          p.type === "post" || (!hidePostedInSourceTabs && p.type === "posted" && (!p.postedFrom || p.postedFrom === "post")),
+        );
+      case "clip":
+        return posts.filter((p) =>
+          p.type === "clip" || (!hidePostedInSourceTabs && p.type === "posted" && (!p.postedFrom || p.postedFrom === "clip")),
+        );
       case "posted": return posts.filter((p) => p.type === "posted");
       case "media": return posts.filter((p) => (p.imageBlobs && p.imageBlobs.length > 0) || Boolean(p.imageBlob));
       default: return posts;
     }
-  }, [posts, activeTab]);
+  }, [posts, activeTab, hidePostedInSourceTabs]);
 
   const availableTags = useMemo(() => {
     const tagCounts = new Map<string, number>();
@@ -122,7 +151,10 @@ export function usePosts() {
 
   useEffect(() => {
     if (activeTag && !availableTags.includes(activeTag)) {
-      setActiveTag(null);
+      const syncTimer = setTimeout(() => {
+        setActiveTag(null);
+      }, 0);
+      return () => clearTimeout(syncTimer);
     }
   }, [activeTag, availableTags]);
 
@@ -254,6 +286,8 @@ export function usePosts() {
   return {
     posts,
     visiblePosts,
+    hidePostedInSourceTabs,
+    setHidePostedInSourceTabs,
     activeTab,
     setActiveTab,
     activeTag,

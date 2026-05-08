@@ -27,6 +27,16 @@ type PostComposerProps = {
   onSubmit: () => void;
 };
 
+function readCustomTags() {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = localStorage.getItem("bocchisns_custom_tags");
+    return saved ? (JSON.parse(saved) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function PostComposer({
   submitLabel,
   value,
@@ -42,7 +52,7 @@ export function PostComposer({
   const [tagInput, setTagInput] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
   const [isBodyFocused, setIsBodyFocused] = useState(false);
-  const [customTags, setCustomTags] = useState<string[]>([]);
+  const [customTags, setCustomTags] = useState<string[]>(readCustomTags);
   const [ogp, setOgp] = useState<OgpPreview | null>(value.ogp ?? null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const ogpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,17 +66,6 @@ export function PostComposer({
     latestValueRef.current = value;
     latestOnChangeRef.current = onChange;
   }, [value, onChange]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("bocchisns_custom_tags");
-      if (saved) {
-        setCustomTags(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error("Failed to parse custom tags", e);
-    }
-  }, []);
 
   // URLが変わったらOGPを自動取得
   const fetchOgp = useCallback(async (url: string) => {
@@ -105,15 +104,19 @@ export function PostComposer({
   useEffect(() => {
     if (ogpTimerRef.current) clearTimeout(ogpTimerRef.current);
     if (!value.url.trim()) {
-      setOgp(null);
-      if (value.ogp) latestOnChangeRef.current({ ...latestValueRef.current, ogp: undefined });
-      lastFetchedUrl.current = "";
-      return;
+      const syncTimer = setTimeout(() => {
+        setOgp(null);
+        if (value.ogp) latestOnChangeRef.current({ ...latestValueRef.current, ogp: undefined });
+        lastFetchedUrl.current = "";
+      }, 0);
+      return () => clearTimeout(syncTimer);
     }
     if (value.ogp && lastFetchedUrl.current !== value.url.trim()) {
-      setOgp(value.ogp);
-      lastFetchedUrl.current = value.url.trim();
-      return;
+      const syncTimer = setTimeout(() => {
+        setOgp(value.ogp ?? null);
+        lastFetchedUrl.current = value.url.trim();
+      }, 0);
+      return () => clearTimeout(syncTimer);
     }
     ogpTimerRef.current = setTimeout(() => {
       fetchOgp(value.url.trim());
@@ -138,7 +141,7 @@ export function PostComposer({
       setCustomTags(nextCustom);
       try {
         localStorage.setItem("bocchisns_custom_tags", JSON.stringify(nextCustom));
-      } catch (e) {}
+      } catch {}
     }
 
     if (currentTags.includes(trimmed)) {

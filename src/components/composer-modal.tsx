@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PostComposer, type PostFormValue } from "@/components/ui/post-composer";
 
@@ -25,6 +27,27 @@ export function ComposerModal({
   imageError,
   isBusy,
 }: ComposerModalProps) {
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const requestClose = useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      setIsClosing(false);
+      onClose();
+    }, 160);
+  }, [isClosing, onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -50,16 +73,16 @@ export function ComposerModal({
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !isClosing) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-2 backdrop-blur-[3px]">
+    <div className={`fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-2 backdrop-blur-[3px] ${isClosing ? "composer-backdrop-out" : "composer-backdrop-in"}`}>
       <div
         className="absolute inset-0"
-        onClick={onClose}
+        onClick={requestClose}
       />
 
-      <div className="relative mt-2 w-full max-w-md animate-[composer-sheet-in_180ms_cubic-bezier(0.2,0.8,0.2,1)] overflow-hidden rounded-[28px] bg-card shadow-2xl">
+      <div className={`relative mt-2 w-full max-w-md overflow-hidden rounded-[28px] bg-card shadow-2xl ${isClosing ? "composer-sheet-out" : "composer-sheet-in"}`}>
         <div className="max-h-[calc(100vh-1rem)] overflow-y-auto screen-scroll">
           <PostComposer
             submitLabel="保存する"
@@ -67,7 +90,7 @@ export function ComposerModal({
             imagePreviewUrls={imagePreviewUrls}
             imageError={imageError}
             pending={isBusy}
-            onCancel={onClose}
+            onCancel={requestClose}
             onChange={onChange}
             onImagesSelect={onImagesSelect}
             onSubmit={onSubmit}

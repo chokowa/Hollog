@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import { usePosts, type PostFormValue } from "@/hooks/use-posts";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { usePosts } from "@/hooks/use-posts";
 import { AppHeader } from "@/components/app-header";
 import { PostFeed } from "@/components/post-feed";
 import { BottomNav } from "@/components/bottom-nav";
@@ -10,6 +10,7 @@ import { PostDetail } from "@/components/post-detail";
 import { ShareImport } from "@/components/share-import";
 import { SettingsView } from "@/components/settings-view";
 import { useTheme } from "@/hooks/use-theme";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { validateImageFile } from "@/lib/image-validation";
 import type { Post, PostType } from "@/types/post";
 
@@ -25,6 +26,8 @@ export default function Home() {
   const {
     posts,
     visiblePosts,
+    hidePostedInSourceTabs,
+    setHidePostedInSourceTabs,
     activeTab,
     setActiveTab,
     activeTag,
@@ -59,6 +62,8 @@ export default function Home() {
   const scrollIntentDirectionRef = useRef<"up" | "down" | null>(null);
   const isTopChromeHiddenRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
+  const scrollChromeTimerRef = useRef<number | null>(null);
+  const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
@@ -115,16 +120,60 @@ export default function Home() {
   useEffect(() => {
     const TOP_REVEAL_Y = 48;
     const HIDE_START_Y = 120;
-    const HIDE_AFTER_SCROLL = 28;
-    const SHOW_AFTER_SCROLL = 18;
+    const HIDE_AFTER_SCROLL = 44;
+    const SHOW_AFTER_SCROLL = 32;
+    const MIN_SCROLL_DELTA = 6;
+    const SCROLL_CHROME_SETTLE_DELAY = 72; // Set to 0 to restore immediate hide/show.
+
+    const applyTimelineChromeHidden = (hidden: boolean) => {
+      pendingTimelineChromeHiddenRef.current = null;
+      setTimelineChromeHidden(hidden);
+    };
+
+    const scheduleTimelineChromeHidden = (hidden: boolean, delay = SCROLL_CHROME_SETTLE_DELAY) => {
+      if (hidden === isTopChromeHiddenRef.current) {
+        pendingTimelineChromeHiddenRef.current = null;
+        if (scrollChromeTimerRef.current !== null) {
+          window.clearTimeout(scrollChromeTimerRef.current);
+          scrollChromeTimerRef.current = null;
+        }
+        return;
+      }
+      if (pendingTimelineChromeHiddenRef.current === hidden) return;
+
+      pendingTimelineChromeHiddenRef.current = hidden;
+      if (scrollChromeTimerRef.current !== null) {
+        window.clearTimeout(scrollChromeTimerRef.current);
+        scrollChromeTimerRef.current = null;
+      }
+
+      if (delay <= 0) {
+        applyTimelineChromeHidden(hidden);
+        return;
+      }
+
+      scrollChromeTimerRef.current = window.setTimeout(() => {
+        scrollChromeTimerRef.current = null;
+        applyTimelineChromeHidden(hidden);
+      }, delay);
+    };
 
     const updateScrollChrome = () => {
       scrollFrameRef.current = null;
-      if (activeViewRef.current !== "home") return;
+      if (activeViewRef.current !== "home") {
+        pendingTimelineChromeHiddenRef.current = null;
+        if (scrollChromeTimerRef.current !== null) {
+          window.clearTimeout(scrollChromeTimerRef.current);
+          scrollChromeTimerRef.current = null;
+        }
+        return;
+      }
 
       const currentY = window.scrollY;
       const previousY = lastScrollYRef.current;
       const delta = currentY - previousY;
+      if (Math.abs(delta) < MIN_SCROLL_DELTA) return;
+
       const direction = delta > 0 ? "down" : delta < 0 ? "up" : scrollIntentDirectionRef.current;
 
       let nextHidden = isTopChromeHiddenRef.current;
@@ -149,7 +198,7 @@ export default function Home() {
       }
 
       if (nextHidden !== isTopChromeHiddenRef.current) {
-        setTimelineChromeHidden(nextHidden);
+        scheduleTimelineChromeHidden(nextHidden, currentY < TOP_REVEAL_Y ? 0 : SCROLL_CHROME_SETTLE_DELAY);
         scrollIntentStartYRef.current = currentY;
       }
 
@@ -169,6 +218,10 @@ export default function Home() {
       if (scrollFrameRef.current !== null) {
         window.cancelAnimationFrame(scrollFrameRef.current);
       }
+      if (scrollChromeTimerRef.current !== null) {
+        window.clearTimeout(scrollChromeTimerRef.current);
+      }
+      pendingTimelineChromeHiddenRef.current = null;
     };
   }, [setTimelineChromeHidden]);
 
@@ -188,11 +241,16 @@ export default function Home() {
 
   useEffect(() => {
     if (isEditorOpen && selectedPost) {
-      setComposerValue(fromPost(selectedPost));
-      return;
+      const syncTimer = setTimeout(() => {
+        setComposerValue(fromPost(selectedPost));
+      }, 0);
+      return () => clearTimeout(syncTimer);
     }
     if (isComposerOpen && !isEditorOpen) {
-      setComposerValue(emptyForm);
+      const syncTimer = setTimeout(() => {
+        setComposerValue(emptyForm);
+      }, 0);
+      return () => clearTimeout(syncTimer);
     }
   }, [emptyForm, fromPost, isComposerOpen, isEditorOpen, selectedPost]);
 
@@ -268,13 +326,14 @@ export default function Home() {
     }
   }, []);
 
-  // プレビューURL管理
-  const [composerPreviewUrls, setComposerPreviewUrls] = useState<string[]>([]);
+  const composerPreviewUrls = useMemo(
+    () => (composerValue.imageBlobs || []).map((blob) => URL.createObjectURL(blob)),
+    [composerValue.imageBlobs],
+  );
+
   useEffect(() => {
-    const urls = (composerValue.imageBlobs || []).map(blob => URL.createObjectURL(blob));
-    setComposerPreviewUrls(urls);
-    return () => urls.forEach(url => URL.revokeObjectURL(url));
-  }, [composerValue.imageBlobs]);
+    return () => composerPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [composerPreviewUrls]);
 
   // 投稿送信ハンドラー
   const handleSubmit = async () => {
@@ -288,8 +347,8 @@ export default function Home() {
   // 詳細画面からの操作
   const handleCopyForX = async () => {
     if (!selectedPost) return;
-    await navigator.clipboard.writeText(buildTweetText(selectedPost));
-    alert("X投稿用テキストをコピーしました。");
+    const copied = await copyTextToClipboard(buildTweetText(selectedPost));
+    alert(copied ? "X投稿用テキストをコピーしました。" : "コピーできませんでした。");
   };
 
   const handleOpenX = () => {
@@ -300,7 +359,9 @@ export default function Home() {
 
   const handleMarkAsPosted = async () => {
     if (!selectedPost) return;
-    await updatePost(selectedPost.id, { ...fromPost(selectedPost), type: "posted" }, selectedPost.source);
+    const nextType = selectedPost.type === "posted" ? (selectedPost.postedFrom ?? "post") : "posted";
+    const postedFrom = selectedPost.type === "posted" ? selectedPost.postedFrom : selectedPost.type;
+    await updatePost(selectedPost.id, { ...fromPost(selectedPost), type: nextType, postedFrom }, selectedPost.source);
   };
 
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
@@ -315,9 +376,9 @@ export default function Home() {
     }
   };
 
-  const handleImportShare = async (postData: { body: string; url: string; tags: string[]; type: string }) => {
+  const handleImportShare = async (postData: { body: string; url: string; tags: string[]; type: PostType }) => {
     const success = await createPost({
-      type: postData.type as any,
+      type: postData.type,
       body: postData.body,
       url: postData.url,
       tagsText: postData.tags.join(", "),
@@ -385,7 +446,13 @@ export default function Home() {
   if (activeView === "settings") {
     return (
       <main className="flex flex-col flex-1">
-        <SettingsView onBack={goBackOrHome} themeMode={themeMode} onThemeChange={setTheme} />
+        <SettingsView
+          onBack={goBackOrHome}
+          themeMode={themeMode}
+          onThemeChange={setTheme}
+          hidePostedInSourceTabs={hidePostedInSourceTabs}
+          onHidePostedInSourceTabsChange={setHidePostedInSourceTabs}
+        />
       </main>
     );
   }
@@ -418,6 +485,7 @@ export default function Home() {
             onPostOgpFetched={(post, ogp) => {
               if (ogp) updatePostOgp(post, ogp);
             }}
+            onPostDelete={deletePost}
             isBooting={isBooting}
             header={
               <AppHeader
@@ -438,7 +506,7 @@ export default function Home() {
       )}
 
       <BottomNav
-        activeView={activeView as any}
+        activeView={activeView === "profile" ? "profile" : "home"}
         onViewChange={(view) => {
           if (view === "post") {
             openNewComposer();

@@ -2,10 +2,11 @@
 
 import { X, Link as LinkIcon, Plus } from "lucide-react";
 import { useState } from "react";
+import type { PostType } from "@/types/post";
 
 type ShareImportProps = {
   onBack: () => void;
-  onImport: (postData: { body: string; url: string; tags: string[]; type: string }) => void;
+  onImport: (postData: { body: string; url: string; tags: string[]; type: PostType }) => void;
   isBusy?: boolean;
 };
 

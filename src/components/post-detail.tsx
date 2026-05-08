@@ -80,7 +80,7 @@ export function PostDetail({
 
           <button
             onClick={onMarkAsPosted}
-            disabled={isBusy || post.type === "posted"}
+            disabled={isBusy}
             className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-muted/50 disabled:opacity-50"
           >
             <CheckCircle2

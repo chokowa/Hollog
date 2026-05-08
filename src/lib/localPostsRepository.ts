@@ -28,6 +28,7 @@ type LegacyPost = Partial<Post> & {
   type?: "draft" | "saved" | "post" | "clip" | "posted";
   source?: Post["source"];
   imageBlobs?: Blob[];
+  postedFrom?: Post["postedFrom"];
 };
 
 function createPostId() {
@@ -78,6 +79,7 @@ function normalizePost(rawPost: LegacyPost): Post {
   return {
     id: rawPost.id ?? createPostId(),
     type: nextType,
+    postedFrom: rawPost.postedFrom,
     body: rawPost.body ?? "",
     url: rawPost.url ?? undefined,
     ogp: rawPost.ogp,

@@ -13,6 +13,7 @@ type ImageViewerProps = {
     width: number;
     height: number;
   } | null;
+  getOriginRect?: (index: number) => Rect | null;
   onClose: () => void;
 };
 
@@ -23,7 +24,7 @@ type Rect = {
   height: number;
 };
 
-export function ImageViewer({ images, initialIndex = 0, originRect, onClose }: ImageViewerProps) {
+export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRect, onClose }: ImageViewerProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
@@ -86,7 +87,9 @@ export function ImageViewer({ images, initialIndex = 0, originRect, onClose }: I
   }, [onClose]);
 
   const closeToOrigin = useCallback(() => {
-    if (!originRect) {
+    const closeOriginRect = getOriginRect?.(currentIndex) ?? originRect;
+
+    if (!closeOriginRect) {
       closeAfterKillingScroll();
       return;
     }
@@ -107,11 +110,11 @@ export function ImageViewer({ images, initialIndex = 0, originRect, onClose }: I
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         setIsClosingToOrigin(true);
-        setClosingRect(originRect);
+        setClosingRect(closeOriginRect);
         closeAfterKillingScroll(180);
       });
     });
-  }, [closeAfterKillingScroll, originRect]);
+  }, [closeAfterKillingScroll, currentIndex, getOriginRect, originRect]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(null);
@@ -248,6 +251,8 @@ export function ImageViewer({ images, initialIndex = 0, originRect, onClose }: I
             transitionTimingFunction: isClosingToOrigin ? "cubic-bezier(0.2, 0.8, 0.2, 1)" : undefined,
           }}
         >
+          {/* User-selected blob URLs need native img behavior for the gesture viewer. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             ref={imageRef}
             src={images[currentIndex]}

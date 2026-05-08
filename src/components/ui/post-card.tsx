@@ -4,6 +4,7 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { Copy, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft } from "lucide-react";
 import { ImageViewer } from "@/components/ui/image-viewer";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import type { OgpPreview, Post, PostType } from "@/types/post";
 
 type PostCardProps = {
@@ -68,9 +69,33 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [shouldFetchOgp, setShouldFetchOgp] = useState(isDetail);
+  const [shouldLoadImages, setShouldLoadImages] = useState(isDetail);
   const articleRef = useRef<HTMLElement>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
+
+  useEffect(() => {
+    if (isDetail || shouldLoadImages || !imageUrls || imageUrls.length === 0) return;
+    const article = articleRef.current;
+
+    if (!article || !("IntersectionObserver" in window)) {
+      const timer = window.setTimeout(() => setShouldLoadImages(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldLoadImages(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "900px 0px" },
+    );
+
+    observer.observe(article);
+    return () => observer.disconnect();
+  }, [imageUrls, isDetail, shouldLoadImages]);
 
   useEffect(() => {
     if (isDetail || !post.url || post.ogp || fetchedRef.current || shouldFetchOgp) return;
@@ -123,9 +148,9 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
     })();
   }, [post.ogp, post.url, onOgpFetched, shouldFetchOgp]);
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(post.body);
+    await copyTextToClipboard(post.body);
   };
 
   const handleShare = (e: React.MouseEvent) => {
@@ -152,6 +177,15 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
   const renderImages = () => {
     if (!imageUrls || imageUrls.length === 0) return null;
 
+    const count = imageUrls.length;
+    if (!shouldLoadImages) {
+      if (count === 1) {
+        return <div className="mb-4 aspect-[3/2] rounded-lg border border-border bg-black/5" />;
+      }
+
+      return <div className="mb-4 aspect-[3/2] rounded-lg border border-border bg-black/5" />;
+    }
+
     if (isDetail) {
       return (
         <div className="mb-4 flex flex-col gap-3">
@@ -171,7 +205,6 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
       );
     }
 
-    const count = imageUrls.length;
     if (count === 1) {
       return (
         <div className="mb-4 overflow-hidden rounded-lg border border-border bg-black/5 max-h-[400px]">

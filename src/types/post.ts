@@ -12,6 +12,7 @@ export type OgpPreview = {
 export type Post = {
   id: string;
   type: PostType;
+  postedFrom?: Exclude<PostType, "posted">;
   body: string;
   url?: string;
   ogp?: OgpPreview;

@@ -12,6 +12,7 @@ function getSystemPreference(): "light" | "dark" {
 }
 
 function applyTheme(mode: ThemeMode) {
+  if (typeof document === "undefined") return;
   const resolved = mode === "system" ? getSystemPreference() : mode;
   const root = document.documentElement;
   if (resolved === "dark") {
@@ -21,16 +22,18 @@ function applyTheme(mode: ThemeMode) {
   }
 }
 
-export function useTheme() {
-  const [mode, setMode] = useState<ThemeMode>("system");
+function readInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") return "system";
+  const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+  return saved || "system";
+}
 
-  // 初期化：localStorageから読み込み＆適用
+export function useTheme() {
+  const [mode, setMode] = useState<ThemeMode>(readInitialTheme);
+
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-    const initial = saved || "system";
-    setMode(initial);
-    applyTheme(initial);
-  }, []);
+    applyTheme(mode);
+  }, [mode]);
 
   // システム設定の変更を監視（「システムにしたがう」選択時のみ反応）
   useEffect(() => {
