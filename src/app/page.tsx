@@ -1,65 +1,476 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useCallback, useEffect, useRef } from "react";
+import { usePosts, type PostFormValue } from "@/hooks/use-posts";
+import { AppHeader } from "@/components/app-header";
+import { PostFeed } from "@/components/post-feed";
+import { BottomNav } from "@/components/bottom-nav";
+import { ComposerModal } from "@/components/composer-modal";
+import { PostDetail } from "@/components/post-detail";
+import { ShareImport } from "@/components/share-import";
+import { SettingsView } from "@/components/settings-view";
+import { useTheme } from "@/hooks/use-theme";
+import { validateImageFile } from "@/lib/image-validation";
+import type { Post, PostType } from "@/types/post";
+
+type ActiveView = "home" | "post" | "profile" | "detail" | "share" | "settings";
+type AppHistoryState = {
+  bocchiSns: true;
+  view: ActiveView;
+  postId?: string | null;
+  composer?: "new" | "edit" | null;
+};
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+  const {
+    posts,
+    visiblePosts,
+    activeTab,
+    setActiveTab,
+    activeTag,
+    setActiveTag,
+    availableTags,
+    searchQuery,
+    setSearchQuery,
+    isBooting,
+    isBusy,
+    postImageUrlMap,
+    loadPosts,
+    createPost,
+    updatePost,
+    updatePostOgp,
+    deletePost,
+    fromPost,
+    emptyForm,
+    buildTweetText,
+  } = usePosts();
+
+  // 表示・入力状態
+  const [activeView, setActiveView] = useState<ActiveView>("home");
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [composerValue, setComposerValue] = useState(emptyForm);
+  const [imageError, setImageError] = useState<string>("");
+  const activeViewRef = useRef<ActiveView>("home");
+  const selectedPostIdRef = useRef<string | null>(null);
+  const lastScrollYRef = useRef(0);
+  const scrollIntentStartYRef = useRef(0);
+  const scrollIntentDirectionRef = useRef<"up" | "down" | null>(null);
+  const isTopChromeHiddenRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
+  const { mode: themeMode, setTheme } = useTheme();
+
+  const selectedPost = posts.find((p) => p.id === selectedPostId);
+
+  const setTimelineChromeHidden = useCallback((hidden: boolean) => {
+    isTopChromeHiddenRef.current = hidden;
+    document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+  }, []);
+
+  const requestTimelineTop = useCallback(() => {
+    setTimelineChromeHidden(false);
+    window.dispatchEvent(new Event("bocchi:timeline-top"));
+  }, [setTimelineChromeHidden]);
+
+  const applyHistoryState = useCallback((state: AppHistoryState | null) => {
+    const nextState: AppHistoryState = state?.bocchiSns ? state : { bocchiSns: true, view: "home" };
+    setActiveView(nextState.view);
+    setSelectedPostId(nextState.postId ?? null);
+    setIsComposerOpen(Boolean(nextState.composer));
+    setIsEditorOpen(nextState.composer === "edit");
+    if (!nextState.composer) {
+      setImageError("");
+    }
+  }, []);
+
+  const replaceHistoryState = useCallback((state: AppHistoryState) => {
+    window.history.replaceState(state, "", window.location.href);
+  }, []);
+
+  const pushHistoryState = useCallback((state: AppHistoryState) => {
+    window.history.pushState(state, "", window.location.href);
+    applyHistoryState(state);
+  }, [applyHistoryState]);
+
+  const goBackOrHome = useCallback(() => {
+    const currentState = window.history.state as AppHistoryState | null;
+    if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.composer)) {
+      window.history.back();
+      return;
+    }
+    const homeState: AppHistoryState = { bocchiSns: true, view: "home" };
+    replaceHistoryState(homeState);
+    applyHistoryState(homeState);
+  }, [applyHistoryState, replaceHistoryState]);
+
+  useEffect(() => {
+    activeViewRef.current = activeView;
+    selectedPostIdRef.current = selectedPostId;
+    if (activeView !== "home") {
+      setTimelineChromeHidden(false);
+    }
+  }, [activeView, selectedPostId, setTimelineChromeHidden]);
+
+  useEffect(() => {
+    const TOP_REVEAL_Y = 48;
+    const HIDE_START_Y = 120;
+    const HIDE_AFTER_SCROLL = 28;
+    const SHOW_AFTER_SCROLL = 18;
+
+    const updateScrollChrome = () => {
+      scrollFrameRef.current = null;
+      if (activeViewRef.current !== "home") return;
+
+      const currentY = window.scrollY;
+      const previousY = lastScrollYRef.current;
+      const delta = currentY - previousY;
+      const direction = delta > 0 ? "down" : delta < 0 ? "up" : scrollIntentDirectionRef.current;
+
+      let nextHidden = isTopChromeHiddenRef.current;
+      if (!direction) {
+        lastScrollYRef.current = currentY;
+        return;
+      }
+
+      if (direction !== scrollIntentDirectionRef.current) {
+        scrollIntentDirectionRef.current = direction;
+        scrollIntentStartYRef.current = previousY;
+      }
+
+      const intentDistance = Math.abs(currentY - scrollIntentStartYRef.current);
+
+      if (currentY < TOP_REVEAL_Y) {
+        nextHidden = false;
+      } else if (direction === "down" && currentY > HIDE_START_Y && intentDistance > HIDE_AFTER_SCROLL) {
+        nextHidden = true;
+      } else if (direction === "up" && intentDistance > SHOW_AFTER_SCROLL) {
+        nextHidden = false;
+      }
+
+      if (nextHidden !== isTopChromeHiddenRef.current) {
+        setTimelineChromeHidden(nextHidden);
+        scrollIntentStartYRef.current = currentY;
+      }
+
+      lastScrollYRef.current = currentY;
+    };
+
+    const handleScroll = () => {
+      if (scrollFrameRef.current !== null) return;
+      scrollFrameRef.current = window.requestAnimationFrame(updateScrollChrome);
+    };
+
+    lastScrollYRef.current = window.scrollY;
+    setTimelineChromeHidden(false);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+    };
+  }, [setTimelineChromeHidden]);
+
+  useEffect(() => {
+    const initialState = window.history.state as AppHistoryState | null;
+    if (!initialState?.bocchiSns) {
+      replaceHistoryState({ bocchiSns: true, view: "home" });
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      applyHistoryState(event.state as AppHistoryState | null);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [applyHistoryState, replaceHistoryState]);
+
+  useEffect(() => {
+    if (isEditorOpen && selectedPost) {
+      setComposerValue(fromPost(selectedPost));
+      return;
+    }
+    if (isComposerOpen && !isEditorOpen) {
+      setComposerValue(emptyForm);
+    }
+  }, [emptyForm, fromPost, isComposerOpen, isEditorOpen, selectedPost]);
+
+  const openNewComposer = useCallback(() => {
+    setComposerValue(emptyForm);
+    setIsEditorOpen(false);
+    pushHistoryState({
+      bocchiSns: true,
+      view: activeViewRef.current,
+      postId: selectedPostIdRef.current,
+      composer: "new",
+    });
+  }, [emptyForm, pushHistoryState]);
+
+  const openEditComposer = useCallback((post: Post) => {
+    setComposerValue(fromPost(post));
+    setIsEditorOpen(true);
+    pushHistoryState({
+      bocchiSns: true,
+      view: "detail",
+      postId: post.id,
+      composer: "edit",
+    });
+  }, [fromPost, pushHistoryState]);
+
+  const closeComposer = useCallback(() => {
+    const currentState = window.history.state as AppHistoryState | null;
+    if (currentState?.bocchiSns && currentState.composer) {
+      window.history.back();
+      return;
+    }
+    setIsComposerOpen(false);
+    setIsEditorOpen(false);
+  }, []);
+
+  const replaceToHome = useCallback(() => {
+    const homeState: AppHistoryState = { bocchiSns: true, view: "home" };
+    replaceHistoryState(homeState);
+    applyHistoryState(homeState);
+  }, [applyHistoryState, replaceHistoryState]);
+
+  const replaceToDetail = useCallback((postId: string) => {
+    const detailState: AppHistoryState = { bocchiSns: true, view: "detail", postId };
+    replaceHistoryState(detailState);
+    applyHistoryState(detailState);
+  }, [applyHistoryState, replaceHistoryState]);
+
+  // 画像選択ハンドラー
+  const handleImagesSelect = useCallback((files: File[]) => {
+    let currentError = "";
+    const validFiles: File[] = [];
+
+    for (const file of files) {
+      const error = validateImageFile(file);
+      if (error) {
+        currentError = error;
+        break;
+      }
+      validFiles.push(file);
+    }
+
+    setImageError(currentError);
+    if (!currentError && validFiles.length > 0) {
+      setComposerValue((prev) => {
+        const existingBlobs = prev.imageBlobs || [];
+        const nextBlobs = [...existingBlobs, ...validFiles];
+        if (nextBlobs.length > 4) {
+          setImageError("画像は最大4枚まで選択できます。");
+          return prev;
+        }
+        return { ...prev, imageBlobs: nextBlobs };
+      });
+    }
+  }, []);
+
+  // プレビューURL管理
+  const [composerPreviewUrls, setComposerPreviewUrls] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = (composerValue.imageBlobs || []).map(blob => URL.createObjectURL(blob));
+    setComposerPreviewUrls(urls);
+    return () => urls.forEach(url => URL.revokeObjectURL(url));
+  }, [composerValue.imageBlobs]);
+
+  // 投稿送信ハンドラー
+  const handleSubmit = async () => {
+    const success = await createPost(composerValue);
+    if (success) {
+      setComposerValue(emptyForm);
+      replaceToHome();
+    }
+  };
+
+  // 詳細画面からの操作
+  const handleCopyForX = async () => {
+    if (!selectedPost) return;
+    await navigator.clipboard.writeText(buildTweetText(selectedPost));
+    alert("X投稿用テキストをコピーしました。");
+  };
+
+  const handleOpenX = () => {
+    if (!selectedPost) return;
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(buildTweetText(selectedPost))}`;
+    window.open(tweetUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleMarkAsPosted = async () => {
+    if (!selectedPost) return;
+    await updatePost(selectedPost.id, { ...fromPost(selectedPost), type: "posted" }, selectedPost.source);
+  };
+
+  const handlePostTypeChange = async (post: Post, nextType: PostType) => {
+    await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
+  };
+
+  const handleDelete = async () => {
+    if (!selectedPost) return;
+    if (confirm("本当に削除しますか？")) {
+      await deletePost(selectedPost.id);
+      replaceToHome();
+    }
+  };
+
+  const handleImportShare = async (postData: { body: string; url: string; tags: string[]; type: string }) => {
+    const success = await createPost({
+      type: postData.type as any,
+      body: postData.body,
+      url: postData.url,
+      tagsText: postData.tags.join(", "),
+    });
+    if (success) replaceToHome();
+  };
+
+  /* detail / share 画面は全画面で展開 */
+  if (activeView === "detail" && selectedPost) {
+    return (
+      <main className="flex flex-col flex-1">
+        <PostDetail
+          post={selectedPost}
+          imageUrls={postImageUrlMap[selectedPost.id]}
+          onBack={goBackOrHome}
+          onCopyForX={handleCopyForX}
+          onOpenX={handleOpenX}
+          onMarkAsPosted={handleMarkAsPosted}
+          onEdit={() => openEditComposer(selectedPost)}
+          onDelete={handleDelete}
+          onTagClick={(tag) => {
+            setActiveTag(tag);
+            pushHistoryState({ bocchiSns: true, view: "home" });
+          }}
+          onPostTypeChange={handlePostTypeChange}
+          onPostOgpFetched={(post, ogp) => {
+            if (ogp) updatePostOgp(post, ogp);
+          }}
+          isBusy={isBusy}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        <ComposerModal
+          isOpen={isComposerOpen}
+          onClose={closeComposer}
+          onSubmit={async () => {
+            if (isEditorOpen && selectedPost) {
+              const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
+              if (success) replaceToDetail(selectedPost.id);
+            } else {
+              await handleSubmit();
+            }
+          }}
+          value={composerValue}
+          onChange={setComposerValue}
+          onImagesSelect={handleImagesSelect}
+          imageError={imageError}
+          isBusy={isBusy}
+          imagePreviewUrls={composerPreviewUrls}
+        />
       </main>
-    </div>
+    );
+  }
+
+  if (activeView === "share") {
+    return (
+      <main className="flex flex-col flex-1">
+        <ShareImport
+          onBack={goBackOrHome}
+          onImport={handleImportShare}
+          isBusy={isBusy}
+        />
+      </main>
+    );
+  }
+
+  if (activeView === "settings") {
+    return (
+      <main className="flex flex-col flex-1">
+        <SettingsView onBack={goBackOrHome} themeMode={themeMode} onThemeChange={setTheme} />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex flex-col flex-1 relative">
+      {/* 画像エラー表示エリア */}
+      {imageError && (
+        <div className="absolute top-20 left-0 right-0 z-50 px-4 pointer-events-none">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 shadow-lg pointer-events-auto">
+            {imageError}
+          </div>
+        </div>
+      )}
+
+      {activeView === "home" && (
+        <>
+          <PostFeed
+            posts={visiblePosts}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            activeTag={activeTag}
+            availableTags={availableTags}
+            onTagChange={setActiveTag}
+            postImageUrlMap={postImageUrlMap}
+            onPostClick={(id) => {
+              pushHistoryState({ bocchiSns: true, view: "detail", postId: id });
+            }}
+            onPostTypeChange={handlePostTypeChange}
+            onPostOgpFetched={(post, ogp) => {
+              if (ogp) updatePostOgp(post, ogp);
+            }}
+            isBooting={isBooting}
+            header={
+              <AppHeader
+                onRefresh={loadPosts}
+                isBusy={isBusy}
+                onTimelineTopRequest={requestTimelineTop}
+                onSettingsClick={() => pushHistoryState({ bocchiSns: true, view: "settings" })}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+              />
+            }
+          />
+        </>
+      )}
+
+      {activeView === "profile" && (
+        <div className="p-10 text-center">プロフィール機能は準備中です。</div>
+      )}
+
+      <BottomNav
+        activeView={activeView as any}
+        onViewChange={(view) => {
+          if (view === "post") {
+            openNewComposer();
+          } else if (view === "home" && activeViewRef.current === "home") {
+            requestTimelineTop();
+          } else {
+            setTimelineChromeHidden(false);
+            pushHistoryState({ bocchiSns: true, view });
+          }
+        }}
+        onPostClick={openNewComposer}
+        onHomeClick={requestTimelineTop}
+      />
+
+      <ComposerModal
+        isOpen={isComposerOpen}
+        onClose={closeComposer}
+        onSubmit={async () => {
+          if (isEditorOpen && selectedPost) {
+            const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
+            if (success) replaceToDetail(selectedPost.id);
+          } else {
+            await handleSubmit();
+          }
+        }}
+        value={composerValue}
+        onChange={setComposerValue}
+        onImagesSelect={handleImagesSelect}
+        imageError={imageError}
+        isBusy={isBusy}
+        imagePreviewUrls={composerPreviewUrls}
+      />
+    </main>
   );
 }

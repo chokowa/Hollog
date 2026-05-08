@@ -1,26 +1,179 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafafa;
+  --foreground: #030213;
+  --card: #ffffff;
+  --card-foreground: #030213;
+  --popover: #ffffff;
+  --popover-foreground: #030213;
+  --primary: #030213;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #030213;
+  --muted: #f4f4f5;
+  --muted-foreground: #717182;
+  --accent: #f4f4f5;
+  --accent-foreground: #030213;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #030213;
+  --radius: 1rem;
+}
+
+.dark {
+  --background: #0a0a0b;
+  --foreground: #e4e4e7;
+  --card: #141415;
+  --card-foreground: #e4e4e7;
+  --popover: #141415;
+  --popover-foreground: #e4e4e7;
+  --primary: #ffffff;
+  --primary-foreground: #09090b;
+  --secondary: #18181b;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #fca5a5;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d4d4d8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --radius-xl: var(--radius);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 6px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scrollbar-gutter: stable;
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  background: var(--secondary);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(255, 122, 89, 0.22);
+}
+
+.glass-panel {
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--shadow);
+}
+
+.phone-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  background: linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(255, 245, 238, 0.92));
+  box-shadow:
+    0 24px 40px rgba(81, 50, 36, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.phone-shell::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 10;
+  height: 24px;
+  width: 132px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(29, 24, 22, 0.92);
+}
+
+.screen-scroll {
+  scrollbar-width: none;
+}
+
+.screen-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-top-chrome {
+  translate: 0 0;
+}
+
+.timeline-bottom-nav {
+  translate: -50% 0;
+}
+
+.timeline-post-fab {
+  opacity: 1;
+  translate: 0 0;
+}
+
+html[data-timeline-chrome="hidden"] .timeline-top-chrome {
+  translate: 0 -100%;
+}
+
+html[data-timeline-chrome="hidden"] .timeline-bottom-nav {
+  translate: -50% 100%;
+}
+
+html[data-timeline-chrome="hidden"] .timeline-post-fab {
+  opacity: 0;
+  translate: 0 112px;
+}
+
+@keyframes composer-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.timeline-card-shell {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 360px;
+}
+
+.timeline-media-shell {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
 }
