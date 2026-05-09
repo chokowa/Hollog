@@ -4,6 +4,13 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core";
 const OGP_API_BASE_URL = process.env.NEXT_PUBLIC_OGP_API_BASE_URL?.replace(/\/$/, "");
 const OGP_HTML_MAX_LENGTH = 512_000;
 
+type YouTubeOEmbed = {
+  title?: string;
+  author_name?: string;
+  provider_name?: string;
+  thumbnail_url?: string;
+};
+
 function getMetaContent(document: Document, names: string[]) {
   for (const name of names) {
     const element = document.querySelector<HTMLMetaElement>(
@@ -35,6 +42,43 @@ function parseOgpHtml(html: string, pageUrl: string): OgpPreview | null {
   return title || image
     ? { title, description, siteName, image }
     : null;
+}
+
+function isYouTubeUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be";
+  } catch {
+    return false;
+  }
+}
+
+function toYouTubeOgp(data: YouTubeOEmbed): OgpPreview | null {
+  if (!data.title && !data.thumbnail_url) return null;
+  return {
+    title: data.title,
+    description: data.author_name,
+    siteName: data.provider_name || "YouTube",
+    image: data.thumbnail_url,
+  };
+}
+
+async function fetchYouTubeOgp(url: string) {
+  if (!isYouTubeUrl(url)) return null;
+
+  const oembedUrl = `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`;
+  if (Capacitor.isNativePlatform()) {
+    const response = await CapacitorHttp.get({ url: oembedUrl, responseType: "json" });
+    if (response.status < 200 || response.status >= 400) return null;
+    const data = typeof response.data === "string"
+      ? JSON.parse(response.data) as YouTubeOEmbed
+      : response.data as YouTubeOEmbed;
+    return toYouTubeOgp(data);
+  }
+
+  const response = await fetch(oembedUrl);
+  if (!response.ok) return null;
+  return toYouTubeOgp(await response.json() as YouTubeOEmbed);
 }
 
 async function fetchOgpViaNativeHttp(url: string) {
@@ -76,7 +120,9 @@ export async function fetchOgpPreview(url: string): Promise<OgpPreview | null> {
   }
 
   try {
-    return await fetchOgpViaNativeHttp(trimmedUrl) ?? await fetchOgpViaApi(trimmedUrl);
+    return await fetchYouTubeOgp(trimmedUrl)
+      ?? await fetchOgpViaNativeHttp(trimmedUrl)
+      ?? await fetchOgpViaApi(trimmedUrl);
   } catch {
     return null;
   }

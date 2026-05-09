@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { postsRepository } from "@/lib/postsRepository";
 import { uniqueTags } from "@/lib/tag-suggestions";
-import type { OgpPreview, Post, PostRecordInput, TimelineFilter } from "@/types/post";
+import type { OgpPreview, Post, PostMediaRef, PostRecordInput, TimelineFilter } from "@/types/post";
 
 const HIDE_POSTED_IN_SOURCE_TABS_KEY = "bocchisns_hide_posted_in_source_tabs";
 
@@ -16,6 +17,8 @@ export type PostFormValue = {
   ogp?: OgpPreview;
   tagsText: string;
   imageBlobs?: Blob[];
+  mediaRefs?: PostMediaRef[];
+  thumbnailBlobs?: Blob[];
 };
 
 export type AvailableTag = {
@@ -42,6 +45,8 @@ function toRecordInput(value: PostFormValue): PostRecordInput {
     url: value.url.trim() || undefined,
     ogp: value.url.trim() ? value.ogp : undefined,
     imageBlobs: value.imageBlobs,
+    mediaRefs: value.mediaRefs,
+    thumbnailBlobs: value.thumbnailBlobs,
     tags: value.tagsText
       .split(",")
       .map((tag) => tag.trim())
@@ -53,13 +58,29 @@ function getOriginalImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob">) {
   return post.imageBlobs && post.imageBlobs.length > 0 ? post.imageBlobs : (post.imageBlob ? [post.imageBlob] : []);
 }
 
-function getThumbnailImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob" | "thumbnailBlobs">) {
+function getMediaRefs(post: Pick<Post, "mediaRefs">) {
+  return post.mediaRefs ?? [];
+}
+
+function getMediaCount(post: Pick<Post, "imageBlobs" | "imageBlob" | "mediaRefs">) {
+  return getOriginalImageBlobs(post).length + getMediaRefs(post).length;
+}
+
+function getThumbnailImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob" | "thumbnailBlobs" | "mediaRefs">) {
   const originalBlobs = getOriginalImageBlobs(post);
-  if (post.thumbnailBlobs && post.thumbnailBlobs.length === originalBlobs.length && post.thumbnailBlobs.length > 0) {
-    return post.thumbnailBlobs;
+  if (hasCompleteThumbnailSet(post)) {
+    return post.thumbnailBlobs ?? [];
   }
 
   return originalBlobs;
+}
+
+function hasCompleteThumbnailSet(post: Pick<Post, "imageBlobs" | "imageBlob" | "thumbnailBlobs" | "mediaRefs">) {
+  return Boolean(post.thumbnailBlobs && post.thumbnailBlobs.length === getMediaCount(post) && post.thumbnailBlobs.length > 0);
+}
+
+function mediaRefToUrl(mediaRef: PostMediaRef) {
+  return Capacitor.convertFileSrc(mediaRef.uri);
 }
 
 function areBlobListsEqual(left: Blob[] | undefined, right: Blob[] | undefined) {
@@ -89,12 +110,15 @@ function buildPostUrlMap(
   posts: Post[],
   getBlobs: (post: Post) => Blob[],
   listCache: Map<string, { key: string; urls: string[] }>,
+  includeMediaRefs: boolean | ((post: Post) => boolean) = false,
 ) {
   const urls: Record<string, string[]> = {};
 
   posts.forEach((post) => {
     const blobs = getBlobs(post);
-    if (blobs.length === 0) {
+    const shouldIncludeRefs = typeof includeMediaRefs === "function" ? includeMediaRefs(post) : includeMediaRefs;
+    const refUrls = shouldIncludeRefs ? getMediaRefs(post).map(mediaRefToUrl) : [];
+    if (blobs.length === 0 && refUrls.length === 0) {
       return;
     }
 
@@ -106,14 +130,15 @@ function buildPostUrlMap(
       blobUrlCache.set(blob, nextUrl);
       return nextUrl;
     });
-    const cacheKey = nextUrls.join("\n");
+    const allUrls = [...nextUrls, ...refUrls];
+    const cacheKey = allUrls.join("\n");
     const cachedList = listCache.get(post.id);
 
     if (cachedList?.key === cacheKey) {
       urls[post.id] = cachedList.urls;
     } else {
-      listCache.set(post.id, { key: cacheKey, urls: nextUrls });
-      urls[post.id] = nextUrls;
+      listCache.set(post.id, { key: cacheKey, urls: allUrls });
+      urls[post.id] = allUrls;
     }
   });
 
@@ -129,6 +154,8 @@ function fromPost(post: Post): PostFormValue {
     ogp: post.ogp,
     tagsText: post.tags.join(", "),
     imageBlobs: getOriginalImageBlobs(post),
+    mediaRefs: getMediaRefs(post),
+    thumbnailBlobs: post.thumbnailBlobs,
   };
 }
 
@@ -191,7 +218,7 @@ export function usePosts() {
           p.type === "clip" || (!hidePostedInSourceTabs && p.type === "posted" && (!p.postedFrom || p.postedFrom === "clip")),
         );
       case "posted": return posts.filter((p) => p.type === "posted");
-      case "media": return posts.filter((p) => (p.imageBlobs && p.imageBlobs.length > 0) || Boolean(p.imageBlob));
+      case "media": return posts.filter((p) => getMediaCount(p) > 0);
       default: return posts;
     }
   }, [posts, activeTab, hidePostedInSourceTabs]);
@@ -239,11 +266,11 @@ export function usePosts() {
 
   // 画像URL管理
   const postImageUrlMap = useMemo(() => {
-    return buildPostUrlMap(posts, getOriginalImageBlobs, postImageUrlListCache);
+    return buildPostUrlMap(posts, getOriginalImageBlobs, postImageUrlListCache, true);
   }, [posts]);
 
   const postThumbnailUrlMap = useMemo(() => {
-    return buildPostUrlMap(posts, getThumbnailImageBlobs, postThumbnailUrlListCache);
+    return buildPostUrlMap(posts, getThumbnailImageBlobs, postThumbnailUrlListCache, (post) => !hasCompleteThumbnailSet(post));
   }, [posts]);
 
   useEffect(() => {
@@ -290,9 +317,11 @@ export function usePosts() {
     try {
       const recordInput = toRecordInput(value);
       const imageBlobs = recordInput.imageBlobs ?? [];
+      const mediaRefs = recordInput.mediaRefs ?? [];
       const created = await postsRepository.create({
         ...recordInput,
-        thumbnailBlobs: imageBlobs.length > 0 ? await createThumbnailBlobs(imageBlobs) : undefined,
+        thumbnailBlobs: recordInput.thumbnailBlobs
+          ?? (imageBlobs.length > 0 && mediaRefs.length === 0 ? await createThumbnailBlobs(imageBlobs) : undefined),
         source: "manual",
       });
       setPosts((prev) => [created, ...prev]);
@@ -312,8 +341,10 @@ export function usePosts() {
       const currentPost = posts.find((post) => post.id === id);
       const recordInput = toRecordInput(value);
       const nextImageBlobs = recordInput.imageBlobs ?? [];
+      const nextMediaRefs = recordInput.mediaRefs ?? [];
       const shouldRefreshThumbnails = Boolean(
         nextImageBlobs.length > 0
+        && nextMediaRefs.length === 0
         && (
           !currentPost
           || !currentPost.thumbnailBlobs
@@ -323,11 +354,11 @@ export function usePosts() {
       );
       const updated = await postsRepository.update(id, {
         ...recordInput,
-        thumbnailBlobs: nextImageBlobs.length === 0
+        thumbnailBlobs: recordInput.thumbnailBlobs ?? (nextImageBlobs.length === 0 && nextMediaRefs.length === 0
           ? undefined
           : shouldRefreshThumbnails
             ? await createThumbnailBlobs(nextImageBlobs)
-            : currentPost?.thumbnailBlobs,
+            : currentPost?.thumbnailBlobs),
         source,
       });
       setPosts((prev) => prev.map((p) => (p.id === id ? updated : p)));

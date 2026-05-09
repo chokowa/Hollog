@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { memo, useState, useEffect, useRef } from "react";
-import { Copy, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal } from "lucide-react";
+import { Archive, Copy, Database, Download, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import type { ImageOriginRect } from "@/types/navigation";
@@ -17,6 +17,7 @@ type PostCardProps = {
   onTypeChange?: (nextType: PostType) => void;
   onOgpFetched?: (ogp: OgpPreview) => void;
   onImageOpen?: (post: Post, index: number, originRect: ImageOriginRect) => void;
+  onSaveMedia?: (post: Post) => void;
   isDetail?: boolean;
 };
 
@@ -58,12 +59,13 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
-function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTypeChange, onOgpFetched, onImageOpen, isDetail = false }: PostCardProps) {
+function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTypeChange, onOgpFetched, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [shouldFetchOgp, setShouldFetchOgp] = useState(isDetail);
   const [shouldLoadImages, setShouldLoadImages] = useState(isDetail);
+  const [brokenImageUrls, setBrokenImageUrls] = useState<Set<string>>(() => new Set());
   const articleRef = useRef<HTMLElement>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const fetchedRef = useRef(false);
@@ -172,6 +174,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
     (onEdit ?? onClick)?.();
   };
 
+  const handleSaveMedia = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsActionMenuOpen(false);
+    onSaveMedia?.(post);
+  };
+
   const handleMoveType = (e: React.MouseEvent, nextType: PostType) => {
     e.stopPropagation();
     setIsActionMenuOpen(false);
@@ -189,8 +197,59 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
     });
   };
 
+  const markImageBroken = (url: string) => {
+    setBrokenImageUrls((current) => {
+      if (current.has(url)) return current;
+      const next = new Set(current);
+      next.add(url);
+      return next;
+    });
+  };
+
+  const renderBrokenImage = (className: string) => (
+    <div className={`flex items-center justify-center bg-muted px-4 text-center text-xs text-muted-foreground ${className}`}>
+      元ファイルを読み込めません
+    </div>
+  );
+
+  const getMediaStorageBadge = (index: number): { label: string; Icon: LucideIcon } => {
+    const legacyImageCount = (post.imageBlobs?.length ?? 0) + (post.imageBlob ? 1 : 0);
+    if (index < legacyImageCount) {
+      return { label: "旧形式保存", Icon: Database };
+    }
+
+    const mediaRef = post.mediaRefs?.[index - legacyImageCount];
+    if (mediaRef?.storage === "device-reference") {
+      return { label: "元ファイル参照", Icon: LinkIcon };
+    }
+    if (mediaRef?.storage === "app-local-copy") {
+      return { label: "アプリ内保存", Icon: Archive };
+    }
+
+    return { label: "旧形式保存", Icon: Database };
+  };
+
+  const renderMediaStorageBadge = (index: number) => {
+    if (!isDetail) return null;
+    const { label, Icon } = getMediaStorageBadge(index);
+    return (
+      <div
+        className="absolute right-2 top-2 z-[1] flex h-8 w-8 items-center justify-center rounded-full bg-black/30 text-white/70 backdrop-blur-sm"
+        title={label}
+        aria-label={label}
+      >
+        <Icon size={15} />
+      </div>
+    );
+  };
+
   const movableType = post.type === "post" ? "clip" : post.type === "clip" ? "post" : null;
   const moveLabel = movableType === "clip" ? "クリップに移動" : movableType === "post" ? "ポストに移動" : "";
+  const hasMedia = Boolean(
+    (post.imageBlobs?.length ?? 0)
+    + (post.imageBlob ? 1 : 0)
+    + (post.mediaRefs?.filter((mediaRef) => mediaRef.kind === "image").length ?? 0),
+  );
 
   const renderImages = () => {
     if (!imageUrls || imageUrls.length === 0) return null;
@@ -204,15 +263,19 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
       return (
         <div data-card-media className="mb-4 flex flex-col gap-3">
           {imageUrls.map((url, i) => (
-            <div key={i} className="overflow-hidden rounded-lg border border-border bg-black/5">
-              <img
-                src={url}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                className="w-full h-auto object-contain cursor-pointer"
-                onClick={(e) => handleImageClick(e, i)}
-              />
+            <div key={i} className="relative overflow-hidden rounded-lg border border-border bg-black/5">
+              {brokenImageUrls.has(url) ? renderBrokenImage("min-h-40 w-full") : (
+                <img
+                  src={url}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-auto object-contain cursor-pointer"
+                  onClick={(e) => handleImageClick(e, i)}
+                  onError={() => markImageBroken(url)}
+                />
+              )}
+              {renderMediaStorageBadge(i)}
             </div>
           ))}
         </div>
@@ -222,14 +285,17 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
     if (count === 1) {
       return (
         <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5">
-          <img
-            src={imageUrls[0]}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90"
-            onClick={(e) => handleImageClick(e, 0)}
-          />
+          {brokenImageUrls.has(imageUrls[0]) ? renderBrokenImage("h-full w-full") : (
+            <img
+              src={imageUrls[0]}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90"
+              onClick={(e) => handleImageClick(e, 0)}
+              onError={() => markImageBroken(imageUrls[0])}
+            />
+          )}
         </div>
       );
     }
@@ -238,7 +304,9 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
       return (
         <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
           {imageUrls.map((url, i) => (
-            <img key={i} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, i)} />
+            brokenImageUrls.has(url)
+              ? <div key={i}>{renderBrokenImage("h-full w-full")}</div>
+              : <img key={i} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, i)} onError={() => markImageBroken(url)} />
           ))}
         </div>
       );
@@ -247,10 +315,15 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
     if (count === 3) {
       return (
         <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
-          <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 0)} />
+          {brokenImageUrls.has(imageUrls[0])
+            ? renderBrokenImage("h-full w-full")
+            : <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 0)} onError={() => markImageBroken(imageUrls[0])} />}
           <div className="grid grid-rows-2 gap-1 h-full overflow-hidden">
-            <img src={imageUrls[1]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 1)} />
-            <img src={imageUrls[2]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 2)} />
+            {imageUrls.slice(1, 3).map((url, offset) => (
+              brokenImageUrls.has(url)
+                ? <div key={url}>{renderBrokenImage("h-full w-full")}</div>
+                : <img key={url} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, offset + 1)} onError={() => markImageBroken(url)} />
+            ))}
           </div>
         </div>
       );
@@ -260,7 +333,9 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
       return (
         <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
           {imageUrls.slice(0, 4).map((url, i) => (
-            <img key={i} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, i)} />
+            brokenImageUrls.has(url)
+              ? <div key={url}>{renderBrokenImage("h-full w-full")}</div>
+              : <img key={url} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, i)} onError={() => markImageBroken(url)} />
           ))}
         </div>
       );
@@ -377,6 +452,16 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
             </button>
             {isActionMenuOpen && (
               <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
+                {hasMedia && onSaveMedia && (
+                  <button
+                    type="button"
+                    onClick={handleSaveMedia}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  >
+                    <Download size={15} />
+                    <span>端末に保存</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleCopy}
@@ -424,5 +509,6 @@ export const PostCard = memo(PostCardComponent, (prev, next) => (
   prev.post === next.post
   && prev.imageUrls === next.imageUrls
   && prev.onImageOpen === next.onImageOpen
+  && prev.onSaveMedia === next.onSaveMedia
   && prev.isDetail === next.isDetail
 ));

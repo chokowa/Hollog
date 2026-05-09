@@ -1,32 +1,86 @@
 "use client";
 
-import { Check, Link2, Tags, X } from "lucide-react";
-import { useState } from "react";
+import { Check, Images, Link2, Tags, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { readTagSuggestions, writeTagSuggestions } from "@/lib/tag-suggestions";
-import type { PostType } from "@/types/post";
+import type { PostMediaRef, PostType } from "@/types/post";
 
 type ShareImportProps = {
   onBack: () => void;
-  onImport: (postData: { body: string; url: string; tags: string[]; type: PostType }) => void;
+  onImport: (postData: {
+    body: string;
+    url: string;
+    tags: string[];
+    type: PostType;
+    imageBlobs?: Blob[];
+    mediaRefs?: PostMediaRef[];
+    thumbnailBlobs?: Blob[];
+  }) => void;
   isBusy?: boolean;
   initialUrl?: string;
   initialMemo?: string;
+  initialImagePreviews?: SharedImagePreview[];
+  initialImageBlobs?: Blob[];
+};
+
+type SharedImagePreview = {
+  id: string;
+  name: string;
+  type: string;
+  previewUrl: string;
+  mediaRef?: PostMediaRef;
 };
 
 type SaveDestination = "clip" | "post";
 
-export function ShareImport({ onBack, onImport, isBusy, initialUrl = "", initialMemo = "" }: ShareImportProps) {
+export function ShareImport({
+  onBack,
+  onImport,
+  isBusy,
+  initialUrl = "",
+  initialMemo = "",
+  initialImagePreviews = [],
+  initialImageBlobs = [],
+}: ShareImportProps) {
   const [url, setUrl] = useState(initialUrl);
   const [memo, setMemo] = useState(initialMemo);
+  const [sharedImagePreviews, setSharedImagePreviews] = useState(initialImagePreviews);
+  const [imageBlobs, setImageBlobs] = useState(initialImageBlobs);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [tagSuggestions, setTagSuggestions] = useState<string[]>(readTagSuggestions);
   const [saveDestination, setSaveDestination] = useState<SaveDestination>("clip");
+  const [isPreparingImages, setIsPreparingImages] = useState(false);
+  const [brokenPreviewIds, setBrokenPreviewIds] = useState<Set<string>>(() => new Set());
 
   const filteredSuggestions = tagSuggestions
     .filter((tag) => tag.toLowerCase().includes(tagInput.trim().toLowerCase()))
     .filter((tag) => !tags.includes(tag))
     .slice(0, 6);
+  const blobPreviewItems = useMemo(
+    () => imageBlobs.map((blob, index) => ({
+      kind: "blob" as const,
+      id: `blob-${index}-${blob.size}-${blob.type}`,
+      previewUrl: URL.createObjectURL(blob),
+      index,
+    })),
+    [imageBlobs],
+  );
+  const imagePreviewItems = [
+    ...sharedImagePreviews.map((image) => ({
+      kind: "shared" as const,
+      id: image.id,
+      previewUrl: image.previewUrl,
+    })),
+    ...blobPreviewItems,
+  ];
+  const hasImages = sharedImagePreviews.length > 0 || imageBlobs.length > 0;
+  const isSaving = Boolean(isBusy || isPreparingImages);
+
+  useEffect(() => {
+    return () => blobPreviewItems.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  }, [blobPreviewItems]);
 
   const addTag = (value: string) => {
     const tag = value.trim().replace(/^#/, "");
@@ -47,14 +101,60 @@ export function ShareImport({ onBack, onImport, isBusy, initialUrl = "", initial
     setTags((current) => current.filter((tag) => tag !== tagToRemove));
   };
 
-  const handleSave = () => {
-    const fullBody = memo.trim() ? memo.trim() : (url.trim() ? "共有されたリンク" : "共有されたテキスト");
+  const handleSave = async () => {
+    setIsPreparingImages(true);
+    let preparedImageBlobs = imageBlobs;
+    let preparedThumbnailBlobs: Blob[] | undefined;
+    const mediaRefs = sharedImagePreviews
+      .map((image) => image.mediaRef)
+      .filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef));
+    try {
+      if (sharedImagePreviews.length > 0) {
+        const readableSharedImages = await Promise.allSettled(
+          sharedImagePreviews.map(async (image) => {
+            const response = await fetch(image.previewUrl);
+            if (!response.ok) throw new Error("Unable to read shared image");
+            const blob = await response.blob();
+            return new File([blob], image.name, { type: blob.type || image.type });
+          }),
+        );
+        const inlineImageBlobs = readableSharedImages.flatMap((result, index) => {
+          if (sharedImagePreviews[index].mediaRef) return [];
+          if (result.status === "rejected") throw result.reason;
+          return [result.value];
+        });
+        preparedImageBlobs = [...imageBlobs, ...inlineImageBlobs];
+        if (mediaRefs.length > 0) {
+          const thumbnailSourceBlobs = readableSharedImages.flatMap((result, index) => (
+            sharedImagePreviews[index].mediaRef && result.status === "fulfilled" ? [result.value] : []
+          ));
+          preparedThumbnailBlobs = thumbnailSourceBlobs.length > 0
+            ? await createThumbnailBlobs(thumbnailSourceBlobs)
+            : undefined;
+        }
+      }
+    } catch {
+      setIsPreparingImages(false);
+      return;
+    }
+
+    const fullBody = memo.trim()
+      ? memo.trim()
+      : url.trim()
+        ? "共有されたリンク"
+        : preparedImageBlobs.length > 0 || mediaRefs.length > 0
+          ? "共有された画像"
+          : "共有されたテキスト";
     onImport({
       body: fullBody,
       url: url.trim(),
       tags,
       type: saveDestination,
+      imageBlobs: preparedImageBlobs,
+      mediaRefs,
+      thumbnailBlobs: preparedThumbnailBlobs,
     });
+    setIsPreparingImages(false);
   };
 
   return (
@@ -75,15 +175,67 @@ export function ShareImport({ onBack, onImport, isBusy, initialUrl = "", initial
           <button
             type="button"
             onClick={handleSave}
-            disabled={isBusy || (!url.trim() && !memo.trim())}
+            disabled={isSaving || (!url.trim() && !memo.trim() && !hasImages)}
             className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
-            {isBusy ? "保存中..." : "保存"}
+            {isSaving ? "保存中..." : "保存"}
           </button>
         </div>
       </header>
 
       <div className="space-y-4 px-4 py-5">
+        {imagePreviewItems.length > 0 && (
+          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <label className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Images size={15} />
+              画像
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {imagePreviewItems.map((item) => (
+                <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl border border-border bg-black/5">
+                  {brokenPreviewIds.has(item.id) ? (
+                    <div className="flex h-full w-full items-center justify-center bg-muted px-3 text-center text-xs text-muted-foreground">
+                      元ファイルを読み込めません
+                    </div>
+                  ) : (
+                    <>
+                      {/* Shared images are local object URLs and need native img behavior. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.previewUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        onError={() => {
+                          setBrokenPreviewIds((current) => {
+                            if (current.has(item.id)) return current;
+                            const next = new Set(current);
+                            next.add(item.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (item.kind === "shared") {
+                        setSharedImagePreviews((current) => current.filter((image) => image.id !== item.id));
+                        return;
+                      }
+                      setImageBlobs((current) => current.filter((_, currentIndex) => currentIndex !== item.index));
+                    }}
+                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+                    aria-label="画像を削除"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
           <label className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <Link2 size={15} />

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Camera, ImagePlus, Link2, Tags, X, Clipboard, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import { readTagSuggestions, writeTagSuggestions } from "@/lib/tag-suggestions";
-import type { OgpPreview, PostType } from "@/types/post";
+import type { OgpPreview, PostMediaRef, PostType } from "@/types/post";
 
 export type PostFormValue = {
   type: PostType;
@@ -14,18 +14,22 @@ export type PostFormValue = {
   ogp?: OgpPreview;
   tagsText: string;
   imageBlobs?: Blob[];
+  mediaRefs?: PostMediaRef[];
+  thumbnailBlobs?: Blob[];
 };
 
 type PostComposerProps = {
   submitLabel: string;
   value: PostFormValue;
   imagePreviewUrls?: string[];
+  mediaPreviewUrls?: string[];
   imageError?: string;
   pending?: boolean;
   compact?: boolean;
   onCancel?: () => void;
   onChange: (nextValue: PostFormValue) => void;
   onImagesSelect: (files: File[]) => void;
+  onNativeImagesSelect?: () => void;
   onSubmit: () => void;
 };
 
@@ -33,12 +37,14 @@ export function PostComposer({
   submitLabel,
   value,
   imagePreviewUrls,
+  mediaPreviewUrls,
   imageError,
   pending = false,
   compact = false,
   onCancel,
   onChange,
   onImagesSelect,
+  onNativeImagesSelect,
   onSubmit,
 }: PostComposerProps) {
   const [tagInput, setTagInput] = useState("");
@@ -53,6 +59,7 @@ export function PostComposer({
   const latestOnChangeRef = useRef(onChange);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const imageCount = (value.imageBlobs || []).length + (value.mediaRefs || []).length;
 
   useEffect(() => {
     latestValueRef.current = value;
@@ -209,7 +216,7 @@ export function PostComposer({
           <button
             type="button"
             onClick={onSubmit}
-            disabled={pending || (!value.body.trim() && (!value.imageBlobs || value.imageBlobs.length === 0) && !value.url.trim())}
+            disabled={pending || (!value.body.trim() && imageCount === 0 && !value.url.trim())}
             className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
             {pending ? "保存中..." : submitLabel}
@@ -236,6 +243,27 @@ export function PostComposer({
                         const newBlobs = [...(value.imageBlobs || [])];
                         newBlobs.splice(i, 1);
                         onChange({ ...value, imageBlobs: newBlobs });
+                      }}
+                      className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 shadow-md transition-colors hover:bg-black/80"
+                      aria-label="画像を削除"
+                    >
+                      <X size={14} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {mediaPreviewUrls && mediaPreviewUrls.length > 0 && (
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                {mediaPreviewUrls.map((url, i) => (
+                  <div key={url} className="relative aspect-square overflow-hidden rounded-xl border border-border bg-black/5">
+                    <img src={url} alt={`Preview ${i + 1}`} className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextMediaRefs = [...(value.mediaRefs || [])];
+                        nextMediaRefs.splice(i, 1);
+                        onChange({ ...value, mediaRefs: nextMediaRefs, thumbnailBlobs: undefined });
                       }}
                       className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 shadow-md transition-colors hover:bg-black/80"
                       aria-label="画像を削除"
@@ -275,8 +303,14 @@ export function PostComposer({
                 />
                 <button
                   type="button"
-                  onClick={() => imageInputRef.current?.click()}
-                  disabled={(value.imageBlobs || []).length >= 4}
+                  onClick={() => {
+                    if (onNativeImagesSelect) {
+                      onNativeImagesSelect();
+                      return;
+                    }
+                    imageInputRef.current?.click();
+                  }}
+                  disabled={imageCount >= 4}
                   className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                   title="画像を追加"
                   aria-label="画像を追加"
@@ -286,7 +320,7 @@ export function PostComposer({
                 <button
                   type="button"
                   onClick={() => cameraInputRef.current?.click()}
-                  disabled={(value.imageBlobs || []).length >= 4}
+                  disabled={imageCount >= 4}
                   className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                   title="カメラで撮影"
                   aria-label="カメラで撮影"
@@ -296,7 +330,7 @@ export function PostComposer({
                 <button
                   type="button"
                   onClick={handleClipboardRead}
-                  disabled={(value.imageBlobs || []).length >= 4}
+                  disabled={imageCount >= 4}
                   className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                   title="コピーした画像を貼り付け"
                   aria-label="コピーした画像を貼り付け"
@@ -306,7 +340,7 @@ export function PostComposer({
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{value.body.length}</span>
-                <span>{(value.imageBlobs || []).length}/4</span>
+                <span>{imageCount}/4</span>
               </div>
             </div>
           </div>

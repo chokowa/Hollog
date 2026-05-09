@@ -1,6 +1,17 @@
 export type PostType = "post" | "clip" | "posted";
 export type PostSource = "manual" | "share" | "web" | "x";
 export type TimelineFilter = "all" | "post" | "clip" | "posted" | "media";
+export type PostMediaKind = "image" | "video";
+export type PostMediaStorage = "device-reference" | "app-local-copy";
+
+export type PostMediaRef = {
+  id: string;
+  kind: PostMediaKind;
+  storage: PostMediaStorage;
+  uri: string;
+  mimeType?: string;
+  name?: string;
+};
 
 export type OgpPreview = {
   title?: string | null;
@@ -19,6 +30,7 @@ export type Post = {
   imageBlob?: Blob;
   imageBlobs?: Blob[];
   thumbnailBlobs?: Blob[];
+  mediaRefs?: PostMediaRef[];
   tags: string[];
   source: PostSource;
   createdAt: string;

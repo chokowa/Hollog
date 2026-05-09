@@ -13,6 +13,7 @@ type PostDetailProps = {
   onOpenX: () => void;
   onMarkAsPosted: () => void;
   onEdit: () => void;
+  onSaveMedia: (post: Post) => void;
   onDelete: () => void;
   onTagClick: (tag: string) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
@@ -29,6 +30,7 @@ export function PostDetail({
   onOpenX,
   onMarkAsPosted,
   onEdit,
+  onSaveMedia,
   onDelete,
   onTagClick,
   onPostTypeChange,
@@ -39,7 +41,7 @@ export function PostDetail({
   return (
     <div>
       {/* ヘッダー */}
-      <header className="sticky top-0 z-10 border-b border-border bg-card">
+      <header className="sticky top-0 z-30 border-b border-border bg-card">
         <div className="flex items-center gap-4 px-4 py-4">
           <button
             onClick={onBack}
@@ -58,6 +60,7 @@ export function PostDetail({
             imageUrls={imageUrls}
             isDetail={true}
             onTagClick={onTagClick}
+            onSaveMedia={onSaveMedia}
             onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
             onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
             onImageOpen={onImageOpen}

@@ -20,6 +20,7 @@ type PostFeedProps = {
   postThumbnailUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
   onPostEdit: (post: Post) => void;
+  onPostSaveMedia: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
   onPostDelete: (postId: string) => Promise<boolean>;
@@ -257,6 +258,7 @@ export function PostFeed({
   postThumbnailUrlMap,
   onPostClick,
   onPostEdit,
+  onPostSaveMedia,
   onPostTypeChange,
   onPostOgpFetched,
   onPostDelete,
@@ -628,6 +630,7 @@ export function PostFeed({
                           post={post}
                           imageUrls={postThumbnailUrlMap[post.id]}
                           onEdit={() => onPostEdit(post)}
+                          onSaveMedia={onPostSaveMedia}
                           onTagClick={handleTagChange}
                           onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
                           onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}

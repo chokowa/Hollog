@@ -29,6 +29,7 @@ type LegacyPost = Partial<Post> & {
   source?: Post["source"];
   imageBlobs?: Blob[];
   thumbnailBlobs?: Blob[];
+  mediaRefs?: Post["mediaRefs"];
   postedFrom?: Post["postedFrom"];
 };
 
@@ -91,6 +92,7 @@ function normalizePost(rawPost: LegacyPost): Post {
     imageBlob: rawPost.imageBlob,
     imageBlobs: Array.isArray(rawPost.imageBlobs) ? rawPost.imageBlobs : (rawPost.imageBlob ? [rawPost.imageBlob] : []),
     thumbnailBlobs: Array.isArray(rawPost.thumbnailBlobs) ? rawPost.thumbnailBlobs : undefined,
+    mediaRefs: Array.isArray(rawPost.mediaRefs) ? rawPost.mediaRefs : undefined,
     tags: Array.isArray(rawPost.tags) ? rawPost.tags : [],
     source: rawPost.source ?? "manual",
     createdAt: rawPost.createdAt ?? new Date().toISOString(),

@@ -16,9 +16,11 @@ import { TagManagerView } from "@/components/tag-manager-view";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { validateImageFile } from "@/lib/image-validation";
+import { pickNativeImages, saveNativeImages, type NativeSaveMediaItem } from "@/lib/native-media-picker";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
-import type { Post, PostType } from "@/types/post";
+import type { Post, PostMediaRef, PostType } from "@/types/post";
 
 type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings" | "tag-manager";
 type AppHistoryState = {
@@ -34,14 +36,102 @@ type NativeSharePayload = {
   text?: string;
   subject?: string;
   title?: string;
+  images?: Array<{
+    name?: string;
+    type?: string;
+    dataUrl?: string;
+    previewDataUrl?: string;
+    fileUri?: string;
+    uri?: string;
+    id?: string;
+    kind?: "image" | "video";
+    storage?: "device-reference" | "app-local-copy";
+  }>;
+};
+
+type SharedImagePreview = {
+  id: string;
+  name: string;
+  type: string;
+  previewUrl: string;
+  mediaRef?: PostMediaRef;
 };
 
 type PendingShareImport = {
   url: string;
   memo: string;
+  images: SharedImagePreview[];
+  imageBlobs: Blob[];
+  mediaRefs: PostMediaRef[];
 };
 
-function parseSharedText(payload: NativeSharePayload): PendingShareImport {
+function dataUrlToBlob(dataUrl: string, fallbackType: string) {
+  const [header, base64Data] = dataUrl.split(",");
+  if (!header || !base64Data) return null;
+
+  const mimeMatch = header.match(/data:([^;]+)/);
+  const type = mimeMatch?.[1] || fallbackType;
+  const binary = window.atob(base64Data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new Blob([bytes], { type });
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("画像を読み込めませんでした。"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function getImageExtensionFromType(type?: string) {
+  if (type === "image/png") return ".png";
+  if (type === "image/webp") return ".webp";
+  if (type === "image/gif") return ".gif";
+  return ".jpg";
+}
+
+function sharedImageToPreview(image: NonNullable<NativeSharePayload["images"]>[number], index: number): SharedImagePreview | null {
+  const name = image.name || `shared-image-${index + 1}`;
+  const type = image.type || "image/jpeg";
+  const uri = image.uri || image.fileUri;
+  if (uri) {
+    const mediaRef: PostMediaRef = {
+      id: image.id || `${uri}-${index}`,
+      kind: image.kind || "image",
+      storage: image.storage || (image.fileUri ? "app-local-copy" : "device-reference"),
+      uri,
+      mimeType: type,
+      name,
+    };
+
+    return {
+      id: mediaRef.id,
+      name,
+      type,
+      previewUrl: image.previewDataUrl || Capacitor.convertFileSrc(uri),
+      mediaRef,
+    };
+  }
+
+  if (image.dataUrl) {
+    return {
+      id: `${name}-${type}-${index}-${image.dataUrl.length}`,
+      name,
+      type,
+      previewUrl: image.dataUrl,
+    };
+  }
+
+  return null;
+}
+
+function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   const text = payload.text?.trim() ?? "";
   const subject = payload.subject?.trim() ?? "";
   const title = payload.title?.trim() ?? "";
@@ -52,9 +142,16 @@ function parseSharedText(payload: NativeSharePayload): PendingShareImport {
     url ? text.replace(url, "").trim() : text,
   ].filter(Boolean);
 
+  const images = (payload.images ?? [])
+    .map((image, index) => sharedImageToPreview(image, index))
+    .filter((image): image is SharedImagePreview => Boolean(image));
+
   return {
     url,
     memo: Array.from(new Set(memoParts)).join("\n"),
+    images,
+    imageBlobs: [],
+    mediaRefs: images.map((image) => image.mediaRef).filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef)),
   };
 }
 
@@ -411,12 +508,12 @@ export default function Home() {
   useEffect(() => {
     const handleNativeShare = (event: Event) => {
       const customEvent = event as CustomEvent<NativeSharePayload>;
-      const nextShare = parseSharedText(customEvent.detail ?? {});
-      if (!nextShare.url && !nextShare.memo) return;
-      const shareKey = `${nextShare.url}\n${nextShare.memo}`;
+      const nextShare = parseSharedPayload(customEvent.detail ?? {});
+      if (!nextShare.url && !nextShare.memo && nextShare.images.length === 0 && nextShare.imageBlobs.length === 0) return;
+      const shareKey = `${nextShare.url}\n${nextShare.memo}\n${nextShare.images.map((image) => `${image.name}:${image.type}:${image.previewUrl}`).join(",")}`;
       const now = Date.now();
       const lastShare = nativeShareDedupRef.current;
-      if (lastShare?.key === shareKey && now - lastShare.receivedAt < 2500) return;
+      if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) return;
       nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
 
       setPendingShareImport(nextShare);
@@ -512,9 +609,62 @@ export default function Home() {
     }
   }, []);
 
+  const handleNativeImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (composerValue.imageBlobs || []).length + (composerValue.mediaRefs || []).length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await pickNativeImages(remaining);
+      if (!result.items || result.items.length === 0) return;
+
+      const mediaRefs: PostMediaRef[] = result.items.map((item, index) => ({
+        id: item.id || `picked-media-${Date.now()}-${index + 1}`,
+        kind: item.kind || "image",
+        storage: item.storage || "device-reference",
+        uri: item.uri,
+        mimeType: item.mimeType,
+        name: item.name,
+      }));
+      const previewBlobs = result.items
+        .map((item) => item.previewDataUrl ? dataUrlToBlob(item.previewDataUrl, item.mimeType || "image/jpeg") : null)
+        .filter((blob): blob is Blob => Boolean(blob));
+      const thumbnailBlobs = previewBlobs.length > 0 ? await createThumbnailBlobs(previewBlobs) : undefined;
+
+      setImageError("");
+      setComposerValue((prev) => {
+        const nextCount = (prev.imageBlobs || []).length + (prev.mediaRefs || []).length + mediaRefs.length;
+        if (nextCount > 4) {
+          setImageError("画像は最大4枚まで選択できます。");
+          return prev;
+        }
+
+        return {
+          ...prev,
+          mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
+          thumbnailBlobs: thumbnailBlobs
+            ? [...(prev.thumbnailBlobs || []), ...thumbnailBlobs]
+            : prev.thumbnailBlobs,
+        };
+      });
+    } catch {
+      setImageError("画像を選択できませんでした。");
+    }
+  }, [composerValue.imageBlobs, composerValue.mediaRefs]);
+
   const composerPreviewUrls = useMemo(
     () => (composerValue.imageBlobs || []).map((blob) => URL.createObjectURL(blob)),
     [composerValue.imageBlobs],
+  );
+
+  const composerMediaPreviewUrls = useMemo(
+    () => (composerValue.mediaRefs || []).map((mediaRef) => Capacitor.convertFileSrc(mediaRef.uri)),
+    [composerValue.mediaRefs],
   );
 
   useEffect(() => {
@@ -550,6 +700,47 @@ export default function Home() {
     await updatePostStatus(selectedPost, nextType, postedFrom);
   };
 
+  const handleSavePostMedia = useCallback(async (post: Post) => {
+    if (!Capacitor.isNativePlatform()) {
+      alert("端末への保存はAndroidアプリで利用できます。");
+      return;
+    }
+
+    try {
+      const legacyBlobs = post.imageBlobs && post.imageBlobs.length > 0
+        ? post.imageBlobs
+        : post.imageBlob
+          ? [post.imageBlob]
+          : [];
+      const legacyItems = await Promise.all(
+        legacyBlobs.map(async (blob, index) => ({
+          dataUrl: await blobToDataUrl(blob),
+          mimeType: blob.type || "image/jpeg",
+          name: `bocchi-image-${post.id}-${index + 1}${getImageExtensionFromType(blob.type)}`,
+        })),
+      );
+      const copiedItems: NativeSaveMediaItem[] = (post.mediaRefs ?? [])
+        .filter((mediaRef) => mediaRef.kind === "image" && mediaRef.storage === "app-local-copy")
+        .map((mediaRef, index) => ({
+          uri: mediaRef.uri,
+          mimeType: mediaRef.mimeType || "image/jpeg",
+          name: mediaRef.name || `bocchi-image-${post.id}-${index + 1}${getImageExtensionFromType(mediaRef.mimeType)}`,
+        }));
+      const items: NativeSaveMediaItem[] = [...legacyItems, ...copiedItems];
+
+      if (items.length === 0) {
+        const hasDeviceReference = post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image" && mediaRef.storage === "device-reference");
+        alert(hasDeviceReference ? "この画像は元ファイル参照のため、すでに端末内にあります。" : "保存できる画像がありません。");
+        return;
+      }
+
+      const result = await saveNativeImages(items);
+      alert(result.savedCount > 0 ? "端末に保存しました。" : "保存できませんでした。");
+    } catch {
+      alert("保存できませんでした。");
+    }
+  }, []);
+
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
     await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
   };
@@ -562,12 +753,23 @@ export default function Home() {
     }
   };
 
-  const handleImportShare = async (postData: { body: string; url: string; tags: string[]; type: PostType }) => {
+  const handleImportShare = async (postData: {
+    body: string;
+    url: string;
+    tags: string[];
+    type: PostType;
+    imageBlobs?: Blob[];
+    mediaRefs?: PostMediaRef[];
+    thumbnailBlobs?: Blob[];
+  }) => {
     const success = await createPost({
       type: postData.type,
       body: postData.body,
       url: postData.url,
       tagsText: postData.tags.join(", "),
+      imageBlobs: postData.imageBlobs,
+      mediaRefs: postData.mediaRefs,
+      thumbnailBlobs: postData.thumbnailBlobs,
     });
     if (success) replaceToHome();
   };
@@ -600,6 +802,7 @@ export default function Home() {
           onOpenX={handleOpenX}
           onMarkAsPosted={handleMarkAsPosted}
           onEdit={() => openEditComposer(selectedPost)}
+          onSaveMedia={handleSavePostMedia}
           onDelete={handleDelete}
           onTagClick={(tag) => {
             resetToHome(tag);
@@ -627,9 +830,11 @@ export default function Home() {
           value={composerValue}
           onChange={setComposerValue}
           onImagesSelect={handleImagesSelect}
+          onNativeImagesSelect={Capacitor.isNativePlatform() ? handleNativeImagesSelect : undefined}
           imageError={imageError}
           isBusy={isBusy}
           imagePreviewUrls={composerPreviewUrls}
+          mediaPreviewUrls={composerMediaPreviewUrls}
         />
         {postImageViewer}
       </main>
@@ -640,12 +845,14 @@ export default function Home() {
     return (
       <main className="flex flex-col flex-1">
         <ShareImport
-          key={`${pendingShareImport?.url ?? ""}\n${pendingShareImport?.memo ?? ""}`}
+          key={`${pendingShareImport?.url ?? ""}\n${pendingShareImport?.memo ?? ""}\n${pendingShareImport?.images.map((image) => image.id).join(",") ?? ""}`}
           onBack={goBackOrHome}
           onImport={handleImportShare}
           isBusy={isBusy}
           initialUrl={pendingShareImport?.url ?? ""}
           initialMemo={pendingShareImport?.memo ?? ""}
+          initialImagePreviews={pendingShareImport?.images ?? []}
+          initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
         />
       </main>
     );
@@ -706,6 +913,7 @@ export default function Home() {
             postThumbnailUrlMap={postThumbnailUrlMap}
             onPostClick={openPostDetail}
             onPostEdit={openEditComposer}
+            onPostSaveMedia={handleSavePostMedia}
             onPostTypeChange={handlePostTypeChange}
             onPostOgpFetched={(post, ogp) => {
               if (ogp) updatePostOgp(post, ogp);
@@ -784,9 +992,11 @@ export default function Home() {
         value={composerValue}
         onChange={setComposerValue}
         onImagesSelect={handleImagesSelect}
+        onNativeImagesSelect={Capacitor.isNativePlatform() ? handleNativeImagesSelect : undefined}
         imageError={imageError}
         isBusy={isBusy}
         imagePreviewUrls={composerPreviewUrls}
+        mediaPreviewUrls={composerMediaPreviewUrls}
       />
       {postImageViewer}
     </main>

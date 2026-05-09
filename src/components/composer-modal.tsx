@@ -11,7 +11,9 @@ type ComposerModalProps = {
   value: PostFormValue;
   onChange: (value: PostFormValue) => void;
   onImagesSelect: (files: File[]) => void;
+  onNativeImagesSelect?: () => void;
   imagePreviewUrls?: string[];
+  mediaPreviewUrls?: string[];
   imageError?: string;
   isBusy?: boolean;
 };
@@ -23,7 +25,9 @@ export function ComposerModal({
   value,
   onChange,
   onImagesSelect,
+  onNativeImagesSelect,
   imagePreviewUrls,
+  mediaPreviewUrls,
   imageError,
   isBusy,
 }: ComposerModalProps) {
@@ -88,11 +92,13 @@ export function ComposerModal({
             submitLabel="保存する"
             value={value}
             imagePreviewUrls={imagePreviewUrls}
+            mediaPreviewUrls={mediaPreviewUrls}
             imageError={imageError}
             pending={isBusy}
             onCancel={requestClose}
             onChange={onChange}
             onImagesSelect={onImagesSelect}
+            onNativeImagesSelect={onNativeImagesSelect}
             onSubmit={onSubmit}
           />
         </div>

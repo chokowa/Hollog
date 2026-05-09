@@ -32,7 +32,7 @@ type BulkMode = "append" | "replace";
 type MediaFilter = "all" | "with" | "without";
 
 function hasMedia(post: Post) {
-  return Boolean((post.imageBlobs && post.imageBlobs.length > 0) || post.imageBlob);
+  return Boolean((post.imageBlobs && post.imageBlobs.length > 0) || post.imageBlob || (post.mediaRefs && post.mediaRefs.length > 0));
 }
 
 function getPostDateValue(iso: string) {
