@@ -1,10 +1,10 @@
 "use client";
 
-import { Home, Plus, User } from "lucide-react";
+import { CalendarDays, Home, Plus, User } from "lucide-react";
 
 type BottomNavProps = {
-  activeView: "home" | "post" | "profile";
-  onViewChange: (view: "home" | "post" | "profile") => void;
+  activeView: "home" | "calendar" | "post" | "profile";
+  onViewChange: (view: "home" | "calendar" | "post" | "profile") => void;
   onPostClick: () => void;
   onHomeClick?: () => void;
 };
@@ -15,11 +15,14 @@ export function BottomNav({ activeView, onViewChange, onPostClick, onHomeClick }
       <nav
         className="timeline-bottom-nav fixed bottom-0 left-1/2 z-30 w-full max-w-md -translate-x-1/2 border-t border-border bg-card/95 pb-safe will-change-transform transition-transform duration-[260ms] ease-out"
       >
-        <div className="grid grid-cols-2 px-8">
+        <div className="grid grid-cols-3 px-6">
           <button
             onClick={() => {
+              if (activeView === "home") {
+                onHomeClick?.();
+                return;
+              }
               onViewChange("home");
-              onHomeClick?.();
             }}
             className={`flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl transition active:scale-95 ${
               activeView === "home" ? "text-primary" : "text-muted-foreground"
@@ -27,6 +30,16 @@ export function BottomNav({ activeView, onViewChange, onPostClick, onHomeClick }
           >
             <Home size={21} />
             <span className="text-[10px] font-medium text-inherit">ホーム</span>
+          </button>
+
+          <button
+            onClick={() => onViewChange("calendar")}
+            className={`flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl transition active:scale-95 ${
+              activeView === "calendar" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            <CalendarDays size={21} />
+            <span className="text-[10px] font-medium text-inherit">カレンダー</span>
           </button>
 
           <button

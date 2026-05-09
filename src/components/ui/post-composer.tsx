@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Camera, ImagePlus, Link2, Tags, X, Clipboard, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
+import { readTagSuggestions, writeTagSuggestions } from "@/lib/tag-suggestions";
 import type { OgpPreview, PostType } from "@/types/post";
 
 export type PostFormValue = {
@@ -27,16 +28,6 @@ type PostComposerProps = {
   onSubmit: () => void;
 };
 
-function readCustomTags() {
-  if (typeof window === "undefined") return [];
-  try {
-    const saved = localStorage.getItem("bocchisns_custom_tags");
-    return saved ? (JSON.parse(saved) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 export function PostComposer({
   submitLabel,
   value,
@@ -52,7 +43,7 @@ export function PostComposer({
   const [tagInput, setTagInput] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
   const [isBodyFocused, setIsBodyFocused] = useState(false);
-  const [customTags, setCustomTags] = useState<string[]>(readCustomTags);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>(readTagSuggestions);
   const [ogp, setOgp] = useState<OgpPreview | null>(value.ogp ?? null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const ogpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,22 +117,15 @@ export function PostComposer({
     };
   }, [value.url, value.ogp, fetchOgp]);
 
-  const predefinedTags = ["idea", "memo", "design", "reference", "todo", "music", "art"];
-  const allAvailableTags = Array.from(new Set([...predefinedTags, ...customTags]));
-
   const currentTags = value.tagsText.split(",").map(t => t.trim()).filter(Boolean);
-  const suggests = allAvailableTags.filter(t => t.toLowerCase().includes(tagInput.toLowerCase()) && !currentTags.includes(t));
+  const suggests = tagSuggestions.filter(t => t.toLowerCase().includes(tagInput.toLowerCase()) && !currentTags.includes(t));
 
   const addTag = (newTag: string) => {
-    const trimmed = newTag.trim();
+    const trimmed = newTag.trim().replace(/^#/, "");
     if (!trimmed) return;
 
-    if (!allAvailableTags.includes(trimmed)) {
-      const nextCustom = [...customTags, trimmed];
-      setCustomTags(nextCustom);
-      try {
-        localStorage.setItem("bocchisns_custom_tags", JSON.stringify(nextCustom));
-      } catch {}
+    if (!tagSuggestions.includes(trimmed)) {
+      setTagSuggestions(writeTagSuggestions([...tagSuggestions, trimmed]));
     }
 
     if (currentTags.includes(trimmed)) {
@@ -427,7 +411,7 @@ export function PostComposer({
 
               {showSuggest && (tagInput.trim() || suggests.length > 0) && (
                 <div className="absolute bottom-full left-0 right-0 z-20 mb-2 max-h-44 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-lg screen-scroll">
-                  {tagInput.trim() && !currentTags.includes(tagInput.trim()) && !allAvailableTags.includes(tagInput.trim()) && (
+                  {tagInput.trim() && !currentTags.includes(tagInput.trim()) && !tagSuggestions.includes(tagInput.trim()) && (
                     <button
                       type="button"
                       onMouseDown={(e) => {

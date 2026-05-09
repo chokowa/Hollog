@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, Trash2, ZoomIn } from "lucide-react";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { PostCard } from "@/components/ui/post-card";
 import { TabSwitcher } from "@/components/ui/tab-switcher";
+import type { AvailableTag } from "@/hooks/use-posts";
+import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { Post, PostType, TimelineFilter } from "@/types/post";
 
 type PostFeedProps = {
@@ -12,13 +14,18 @@ type PostFeedProps = {
   activeTab: TimelineFilter;
   onTabChange: (tab: TimelineFilter) => void;
   activeTag: string | null;
-  availableTags: string[];
+  availableTags: AvailableTag[];
   onTagChange: (tag: string | null) => void;
   postImageUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
+  onPostEdit: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
   onPostDelete: (postId: string) => Promise<boolean>;
+  imageViewerRoute: ImageViewerRoute | null;
+  imageViewerOriginRect: ImageOriginRect | null;
+  onImageViewerOpen: (route: ImageViewerRoute, originRect?: ImageOriginRect | null) => void;
+  onImageViewerClose: () => void;
   isBooting: boolean;
   header?: ReactNode;
 };
@@ -41,9 +48,69 @@ type MediaItem = {
   mediaKey: string;
 };
 
+type TimelinePostGroup = {
+  dateKey: string;
+  label: string;
+  posts: Post[];
+};
+
 const SWIPE_DELETE_THRESHOLD = 96;
 const SWIPE_MAX_OFFSET = -140;
 const SWIPE_VERTICAL_LOCK = 10;
+
+function getPostDateKey(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return year && month && day ? `${year}-${month}-${day}` : iso;
+}
+
+function formatTimelineDate(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function groupPostsByUpdatedDate(posts: Post[]): TimelinePostGroup[] {
+  const groups: TimelinePostGroup[] = [];
+  const groupMap = new Map<string, TimelinePostGroup>();
+
+  posts.forEach((post) => {
+    const dateKey = getPostDateKey(post.updatedAt);
+    const existingGroup = groupMap.get(dateKey);
+
+    if (existingGroup) {
+      existingGroup.posts.push(post);
+      return;
+    }
+
+    const nextGroup = {
+      dateKey,
+      label: formatTimelineDate(post.updatedAt),
+      posts: [post],
+    };
+    groupMap.set(dateKey, nextGroup);
+    groups.push(nextGroup);
+  });
+
+  return groups;
+}
 
 type SwipeablePostCardProps = {
   post: Post;
@@ -56,6 +123,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
   const [offsetX, setOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const suppressNextClickRef = useRef(false);
+  const startedOnMediaRef = useRef(false);
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -65,9 +133,11 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
   } | null>(null);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (document.documentElement.dataset.imageViewer === "open") return;
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
-    if (target.closest("button, a, input, textarea, select")) return;
+    startedOnMediaRef.current = Boolean(target.closest("[data-card-media], img"));
+    if (target.closest("button, a, input, textarea, select") || startedOnMediaRef.current) return;
 
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -81,6 +151,13 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (document.documentElement.dataset.imageViewer === "open") {
+      dragStateRef.current = null;
+      setIsDragging(false);
+      setOffsetX(0);
+      return;
+    }
+
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) return;
 
@@ -103,11 +180,19 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
   };
 
   const finishSwipe = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (document.documentElement.dataset.imageViewer === "open") {
+      dragStateRef.current = null;
+      setIsDragging(false);
+      setOffsetX(0);
+      return;
+    }
+
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) return;
 
     dragStateRef.current = null;
     setIsDragging(false);
+    startedOnMediaRef.current = false;
 
     if (offsetX <= -SWIPE_DELETE_THRESHOLD) {
       suppressNextClickRef.current = true;
@@ -120,8 +205,12 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
   };
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (document.documentElement.dataset.imageViewer === "open") return;
     const target = event.target as HTMLElement;
-    if (target.closest("button, a, input, textarea, select")) return;
+    if (target.closest("button, a, [data-card-media], img, input, textarea, select") || startedOnMediaRef.current) {
+      startedOnMediaRef.current = false;
+      return;
+    }
 
     if (suppressNextClickRef.current || offsetX !== 0) {
       suppressNextClickRef.current = false;
@@ -165,9 +254,14 @@ export function PostFeed({
   onTagChange,
   postImageUrlMap,
   onPostClick,
+  onPostEdit,
   onPostTypeChange,
   onPostOgpFetched,
   onPostDelete,
+  imageViewerRoute,
+  imageViewerOriginRect,
+  onImageViewerOpen,
+  onImageViewerClose,
   isBooting,
   header,
 }: PostFeedProps) {
@@ -177,7 +271,6 @@ export function PostFeed({
   const mediaItemRefs = useRef(new Map<string, HTMLImageElement>());
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const [mediaViewerIndex, setMediaViewerIndex] = useState<number | null>(null);
   const [pendingDeletedPosts, setPendingDeletedPosts] = useState<Record<string, Post>>({});
   const [latestPendingDeleteId, setLatestPendingDeleteId] = useState<string | null>(null);
   const [visibleItemsState, setVisibleItemsState] = useState({
@@ -199,21 +292,33 @@ export function PostFeed({
       }));
     });
   }, [postImageUrlMap, posts]);
+  const timelinePosts = useMemo(
+    () => posts.filter((post) => !pendingDeletedPosts[post.id]),
+    [pendingDeletedPosts, posts],
+  );
   const visiblePosts = useMemo(
-    () => posts.filter((post) => !pendingDeletedPosts[post.id]).slice(0, visibleItemCount),
-    [pendingDeletedPosts, posts, visibleItemCount],
+    () => timelinePosts.slice(0, visibleItemCount),
+    [timelinePosts, visibleItemCount],
+  );
+  const groupedVisiblePosts = useMemo(
+    () => groupPostsByUpdatedDate(visiblePosts),
+    [visiblePosts],
   );
   const visibleMediaItems = useMemo(
     () => mediaItems.slice(0, visibleItemCount),
     [mediaItems, visibleItemCount],
   );
-  const totalItemCount = activeTab === "media" ? mediaItems.length : posts.length;
+  const totalItemCount = activeTab === "media" ? mediaItems.length : timelinePosts.length;
   const hasMoreItems = visibleItemCount < totalItemCount;
   const deleteTimersRef = useRef(new Map<string, number>());
   const latestPendingPost = latestPendingDeleteId ? pendingDeletedPosts[latestPendingDeleteId] : null;
   const orderedTags = useMemo(() => {
     if (!activeTag) return availableTags;
-    return [activeTag, ...availableTags.filter((tag) => tag !== activeTag)];
+    const activeTagSummary = availableTags.find((tag) => tag.name === activeTag);
+    return [
+      activeTagSummary ?? { name: activeTag, count: 0 },
+      ...availableTags.filter((tag) => tag.name !== activeTag),
+    ];
   }, [activeTag, availableTags]);
   const updateTagScrollButtons = () => {
     const el = tagScrollRef.current;
@@ -264,7 +369,7 @@ export function PostFeed({
   }, [listAnimationKey, totalItemCount]);
   const openMediaViewer = (event: React.MouseEvent, itemIndex: number) => {
     event.stopPropagation();
-    setMediaViewerIndex(itemIndex);
+    onImageViewerOpen({ kind: "media", index: itemIndex }, getMediaOriginRect(itemIndex));
   };
   const commitPendingDelete = useCallback(async (postId: string) => {
     deleteTimersRef.current.delete(postId);
@@ -395,17 +500,20 @@ export function PostFeed({
               >
                 {orderedTags.map((tag) => (
                   <button
-                    key={tag}
+                    key={tag.name}
                     type="button"
-                    onClick={() => handleTagChange(activeTag === tag ? null : tag)}
+                    onClick={() => handleTagChange(activeTag === tag.name ? null : tag.name)}
                     className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      activeTag === tag
+                      activeTag === tag.name
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
                   >
-                    <span>#{tag}</span>
-                    {activeTag === tag && (
+                    <span>#{tag.name}</span>
+                    <span className={`text-[11px] leading-none ${activeTag === tag.name ? "opacity-80" : "text-muted-foreground"}`}>
+                      {tag.count}
+                    </span>
+                    {activeTag === tag.name && (
                       <span className="text-[11px] leading-none opacity-75" aria-hidden="true">
                         ×
                       </span>
@@ -486,23 +594,50 @@ export function PostFeed({
           <div
             key={listAnimationKey}
             ref={postsContainerRef}
-            className="timeline-list-swap flex flex-col gap-4"
+            className="timeline-list-swap relative flex flex-col gap-6 pl-6"
           >
-            {visiblePosts.map((post) => (
-              <div
-                key={post.id}
-                className="timeline-card-shell"
+            <div className="pointer-events-none absolute bottom-0 left-[7px] top-3 w-px bg-border" />
+            {groupedVisiblePosts.map((group) => (
+              <section
+                key={group.dateKey}
+                className="timeline-date-section relative"
+                aria-labelledby={`timeline-date-${group.dateKey}`}
               >
-                <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
-                  <PostCard
-                    post={post}
-                    imageUrls={postImageUrlMap[post.id]}
-                    onTagClick={handleTagChange}
-                    onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
-                    onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
-                  />
-                </SwipeablePostCard>
-              </div>
+                <div className="mb-3 flex items-center gap-3">
+                  <span className="absolute left-[-23px] top-[7px] z-10 h-3 w-3 rounded-full border-2 border-background bg-muted-foreground shadow-[0_0_0_1px_var(--border)]" />
+                  <h2
+                    id={`timeline-date-${group.dateKey}`}
+                    className="min-w-0 flex-1 text-sm font-semibold text-foreground"
+                  >
+                    {group.label}
+                  </h2>
+                  <span className="rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+                    {group.posts.length}件
+                  </span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {group.posts.map((post) => (
+                    <div
+                      key={post.id}
+                      className="timeline-card-shell"
+                    >
+                      <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
+                        <PostCard
+                          post={post}
+                          imageUrls={postImageUrlMap[post.id]}
+                          onEdit={() => onPostEdit(post)}
+                          onTagClick={handleTagChange}
+                          onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
+                          onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
+                          onImageOpen={(clickedPost, index, originRect) => {
+                            onImageViewerOpen({ kind: "post", postId: clickedPost.id, index }, originRect);
+                          }}
+                        />
+                      </SwipeablePostCard>
+                    </div>
+                  ))}
+                </div>
+              </section>
             ))}
             {hasMoreItems && (
               <button
@@ -517,12 +652,14 @@ export function PostFeed({
           </div>
         )}
       </div>
-      {mediaViewerIndex !== null && (
+      {imageViewerRoute?.kind === "media" && visibleMediaItems.length > 0 && (
         <ImageViewer
+          key={`media-${imageViewerRoute.index}`}
           images={visibleMediaItems.map((item) => item.url)}
-          initialIndex={mediaViewerIndex}
+          initialIndex={Math.min(Math.max(imageViewerRoute.index, 0), visibleMediaItems.length - 1)}
+          originRect={imageViewerOriginRect}
           getOriginRect={getMediaOriginRect}
-          onClose={() => setMediaViewerIndex(null)}
+          onClose={onImageViewerClose}
         />
       )}
       {latestPendingPost && (

@@ -1,0 +1,45 @@
+- generic [active] [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e202]:
+      - generic [ref=e204]:
+        - button [ref=e205]:
+          - img [ref=e206]
+        - heading "投稿詳細" [level=1] [ref=e208]
+      - generic [ref=e209]:
+        - article [ref=e211] [cursor=pointer]:
+          - paragraph [ref=e212]: "メモ: 投稿画面は『書き始めるハードルの低さ』が大事。入力欄が怖く見えないように余白を多めにしたい。"
+          - generic [ref=e213]:
+            - button "#design" [ref=e214]
+            - button "#ux" [ref=e215]
+          - generic [ref=e216]:
+            - time [ref=e217]: 2026/05/08 08:40
+            - generic [ref=e218]:
+              - button "コピー" [ref=e219]:
+                - img [ref=e220]
+              - button "Xへ投稿" [ref=e223]:
+                - img [ref=e224]
+              - button "編集" [ref=e227]:
+                - img [ref=e228]
+              - button "ポストに移動" [ref=e230]:
+                - img [ref=e231]
+        - generic [ref=e234]:
+          - button "X投稿用にコピー" [ref=e235]:
+            - img [ref=e236]
+            - generic [ref=e239]: X投稿用にコピー
+          - button "Xを開いて投稿" [ref=e240]:
+            - img [ref=e241]
+            - generic [ref=e245]: Xを開いて投稿
+          - button "投稿済みにする" [ref=e246]:
+            - img [ref=e247]
+            - generic [ref=e250]: 投稿済みにする
+          - generic [ref=e251]:
+            - button "内容を編集" [ref=e252]:
+              - img [ref=e253]
+              - generic [ref=e255]: 内容を編集
+            - button "削除する" [ref=e256]:
+              - img [ref=e257]
+              - generic [ref=e260]: 削除する
+        - paragraph [ref=e261]: ※X投稿時は、本文・URL・タグのみが送信されます。
+  - button "Open Next.js Dev Tools" [ref=e197] [cursor=pointer]:
+    - img [ref=e198]
+  - alert [ref=e201]

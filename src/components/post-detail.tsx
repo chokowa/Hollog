@@ -2,6 +2,7 @@
 
 import { ArrowLeft, Copy, ExternalLink, CheckCircle2, Edit3, Trash2 } from "lucide-react";
 import { PostCard } from "@/components/ui/post-card";
+import type { ImageOriginRect } from "@/types/navigation";
 import type { Post, PostType } from "@/types/post";
 
 type PostDetailProps = {
@@ -16,6 +17,7 @@ type PostDetailProps = {
   onTagClick: (tag: string) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
+  onImageOpen: (post: Post, index: number, originRect: ImageOriginRect) => void;
   isBusy?: boolean;
 };
 
@@ -31,6 +33,7 @@ export function PostDetail({
   onTagClick,
   onPostTypeChange,
   onPostOgpFetched,
+  onImageOpen,
   isBusy,
 }: PostDetailProps) {
   return (
@@ -57,6 +60,7 @@ export function PostDetail({
             onTagClick={onTagClick}
             onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
             onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
+            onImageOpen={onImageOpen}
           />
         </div>
 

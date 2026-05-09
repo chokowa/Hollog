@@ -237,3 +237,13 @@ html[data-timeline-chrome="hidden"] .timeline-post-fab {
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
 }
+
+.image-viewer-nav-button {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .image-viewer-nav-button {
+    display: flex;
+  }
+}

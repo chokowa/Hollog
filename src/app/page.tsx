@@ -5,21 +5,26 @@ import { usePosts } from "@/hooks/use-posts";
 import { AppHeader } from "@/components/app-header";
 import { PostFeed } from "@/components/post-feed";
 import { BottomNav } from "@/components/bottom-nav";
+import { CalendarView } from "@/components/calendar-view";
 import { ComposerModal } from "@/components/composer-modal";
 import { PostDetail } from "@/components/post-detail";
 import { ShareImport } from "@/components/share-import";
 import { SettingsView } from "@/components/settings-view";
+import { ImageViewer } from "@/components/ui/image-viewer";
 import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { validateImageFile } from "@/lib/image-validation";
+import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { Post, PostType } from "@/types/post";
 
-type ActiveView = "home" | "post" | "profile" | "detail" | "share" | "settings";
+type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings";
 type AppHistoryState = {
   bocchiSns: true;
   view: ActiveView;
   postId?: string | null;
   composer?: "new" | "edit" | null;
+  activeTag?: string | null;
+  imageViewer?: ImageViewerRoute | null;
 };
 
 export default function Home() {
@@ -51,12 +56,15 @@ export default function Home() {
   // 表示・入力状態
   const [activeView, setActiveView] = useState<ActiveView>("home");
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [imageViewerRoute, setImageViewerRoute] = useState<ImageViewerRoute | null>(null);
+  const [imageViewerOriginRect, setImageViewerOriginRect] = useState<ImageOriginRect | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [composerValue, setComposerValue] = useState(emptyForm);
   const [imageError, setImageError] = useState<string>("");
   const activeViewRef = useRef<ActiveView>("home");
   const selectedPostIdRef = useRef<string | null>(null);
+  const activeTagRef = useRef<string | null>(null);
   const lastScrollYRef = useRef(0);
   const scrollIntentStartYRef = useRef(0);
   const scrollIntentDirectionRef = useRef<"up" | "down" | null>(null);
@@ -67,27 +75,38 @@ export default function Home() {
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
+  const existingTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    posts.forEach((post) => {
+      post.tags.forEach((tag) => {
+        if (tag.trim()) tagSet.add(tag);
+      });
+    });
+    return Array.from(tagSet);
+  }, [posts]);
 
   const setTimelineChromeHidden = useCallback((hidden: boolean) => {
     isTopChromeHiddenRef.current = hidden;
     document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
   }, []);
 
-  const requestTimelineTop = useCallback(() => {
-    setTimelineChromeHidden(false);
-    window.dispatchEvent(new Event("bocchi:timeline-top"));
-  }, [setTimelineChromeHidden]);
-
   const applyHistoryState = useCallback((state: AppHistoryState | null) => {
     const nextState: AppHistoryState = state?.bocchiSns ? state : { bocchiSns: true, view: "home" };
     setActiveView(nextState.view);
     setSelectedPostId(nextState.postId ?? null);
+    setImageViewerRoute(nextState.imageViewer ?? null);
+    if (!nextState.imageViewer) {
+      setImageViewerOriginRect(null);
+    }
+    if (nextState.view === "home") {
+      setActiveTag(nextState.activeTag ?? null);
+    }
     setIsComposerOpen(Boolean(nextState.composer));
     setIsEditorOpen(nextState.composer === "edit");
     if (!nextState.composer) {
       setImageError("");
     }
-  }, []);
+  }, [setActiveTag]);
 
   const replaceHistoryState = useCallback((state: AppHistoryState) => {
     window.history.replaceState(state, "", window.location.href);
@@ -98,24 +117,100 @@ export default function Home() {
     applyHistoryState(state);
   }, [applyHistoryState]);
 
-  const goBackOrHome = useCallback(() => {
+  const moveToHistoryState = useCallback((state: AppHistoryState) => {
+    replaceHistoryState(state);
+    applyHistoryState(state);
+  }, [applyHistoryState, replaceHistoryState]);
+
+  const getCurrentHistoryBase = useCallback((): AppHistoryState => {
     const currentState = window.history.state as AppHistoryState | null;
-    if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.composer)) {
+    const baseState: AppHistoryState = currentState?.bocchiSns
+      ? currentState
+      : {
+          bocchiSns: true,
+          view: activeViewRef.current,
+          postId: selectedPostIdRef.current,
+          activeTag: activeTagRef.current,
+        };
+
+    return {
+      ...baseState,
+      imageViewer: null,
+    };
+  }, []);
+
+  const openImageViewer = useCallback((route: ImageViewerRoute, originRect?: ImageOriginRect | null) => {
+    setImageViewerOriginRect(originRect ?? null);
+    pushHistoryState({
+      ...getCurrentHistoryBase(),
+      imageViewer: route,
+    });
+  }, [getCurrentHistoryBase, pushHistoryState]);
+
+  const closeImageViewer = useCallback(() => {
+    const currentState = window.history.state as AppHistoryState | null;
+    if (currentState?.bocchiSns && currentState.imageViewer) {
       window.history.back();
       return;
     }
-    const homeState: AppHistoryState = { bocchiSns: true, view: "home" };
-    replaceHistoryState(homeState);
-    applyHistoryState(homeState);
-  }, [applyHistoryState, replaceHistoryState]);
+    setImageViewerRoute(null);
+    setImageViewerOriginRect(null);
+  }, []);
+
+  const openPostDetail = useCallback((postId: string) => {
+    pushHistoryState({ bocchiSns: true, view: "detail", postId });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0 });
+    });
+  }, [pushHistoryState]);
+
+  const scrollViewportToTop = useCallback((behavior: ScrollBehavior = "auto") => {
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior });
+    });
+  }, []);
+
+  const resetToHome = useCallback((nextActiveTag: string | null = null) => {
+    moveToHistoryState({ bocchiSns: true, view: "home", activeTag: nextActiveTag });
+  }, [moveToHistoryState]);
+
+  const resetToCalendar = useCallback(() => {
+    moveToHistoryState({ bocchiSns: true, view: "calendar" });
+  }, [moveToHistoryState]);
+
+  const requestTimelineTop = useCallback(() => {
+    setActiveTag(null);
+    setTimelineChromeHidden(false);
+    resetToHome(null);
+    scrollViewportToTop("auto");
+    window.dispatchEvent(new Event("bocchi:timeline-top"));
+  }, [resetToHome, scrollViewportToTop, setActiveTag, setTimelineChromeHidden]);
+
+  const handleTimelineTagChange = useCallback((tag: string | null) => {
+    if (activeViewRef.current === "home") {
+      pushHistoryState({ bocchiSns: true, view: "home", activeTag: tag });
+      return;
+    }
+    setActiveTag(tag);
+  }, [pushHistoryState, setActiveTag]);
+
+  const goBackOrHome = useCallback(() => {
+    const currentState = window.history.state as AppHistoryState | null;
+    if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.composer || currentState.imageViewer)) {
+      window.history.back();
+      return;
+    }
+    resetToHome(null);
+  }, [resetToHome]);
 
   useEffect(() => {
     activeViewRef.current = activeView;
     selectedPostIdRef.current = selectedPostId;
+    activeTagRef.current = activeTag;
     if (activeView !== "home") {
       setTimelineChromeHidden(false);
     }
-  }, [activeView, selectedPostId, setTimelineChromeHidden]);
+  }, [activeTag, activeView, selectedPostId, setTimelineChromeHidden]);
 
   useEffect(() => {
     const TOP_REVEAL_Y = 48;
@@ -228,11 +323,12 @@ export default function Home() {
   useEffect(() => {
     const initialState = window.history.state as AppHistoryState | null;
     if (!initialState?.bocchiSns) {
-      replaceHistoryState({ bocchiSns: true, view: "home" });
+      replaceHistoryState({ bocchiSns: true, view: "home", activeTag: null });
     }
 
     const handlePopState = (event: PopStateEvent) => {
-      applyHistoryState(event.state as AppHistoryState | null);
+      const nextState = event.state as AppHistoryState | null;
+      applyHistoryState(nextState);
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -287,10 +383,8 @@ export default function Home() {
   }, []);
 
   const replaceToHome = useCallback(() => {
-    const homeState: AppHistoryState = { bocchiSns: true, view: "home" };
-    replaceHistoryState(homeState);
-    applyHistoryState(homeState);
-  }, [applyHistoryState, replaceHistoryState]);
+    resetToHome(null);
+  }, [resetToHome]);
 
   const replaceToDetail = useCallback((postId: string) => {
     const detailState: AppHistoryState = { bocchiSns: true, view: "detail", postId };
@@ -386,6 +480,22 @@ export default function Home() {
     if (success) replaceToHome();
   };
 
+  const postViewerImages = imageViewerRoute?.kind === "post"
+    ? postImageUrlMap[imageViewerRoute.postId]
+    : undefined;
+  const postViewerIndex = postViewerImages && imageViewerRoute?.kind === "post"
+    ? Math.min(Math.max(imageViewerRoute.index, 0), postViewerImages.length - 1)
+    : 0;
+  const postImageViewer = imageViewerRoute?.kind === "post" && postViewerImages && postViewerImages.length > 0 ? (
+    <ImageViewer
+      key={`post-${imageViewerRoute.postId}-${postViewerIndex}`}
+      images={postViewerImages}
+      initialIndex={postViewerIndex}
+      originRect={imageViewerOriginRect}
+      onClose={closeImageViewer}
+    />
+  ) : null;
+
   /* detail / share 画面は全画面で展開 */
   if (activeView === "detail" && selectedPost) {
     return (
@@ -400,12 +510,14 @@ export default function Home() {
           onEdit={() => openEditComposer(selectedPost)}
           onDelete={handleDelete}
           onTagClick={(tag) => {
-            setActiveTag(tag);
-            pushHistoryState({ bocchiSns: true, view: "home" });
+            resetToHome(tag);
           }}
           onPostTypeChange={handlePostTypeChange}
           onPostOgpFetched={(post, ogp) => {
             if (ogp) updatePostOgp(post, ogp);
+          }}
+          onImageOpen={(post, index, originRect) => {
+            openImageViewer({ kind: "post", postId: post.id, index }, originRect);
           }}
           isBusy={isBusy}
         />
@@ -427,6 +539,7 @@ export default function Home() {
           isBusy={isBusy}
           imagePreviewUrls={composerPreviewUrls}
         />
+        {postImageViewer}
       </main>
     );
   }
@@ -452,6 +565,7 @@ export default function Home() {
           onThemeChange={setTheme}
           hidePostedInSourceTabs={hidePostedInSourceTabs}
           onHidePostedInSourceTabsChange={setHidePostedInSourceTabs}
+          existingTags={existingTags}
         />
       </main>
     );
@@ -476,16 +590,19 @@ export default function Home() {
             onTabChange={setActiveTab}
             activeTag={activeTag}
             availableTags={availableTags}
-            onTagChange={setActiveTag}
+            onTagChange={handleTimelineTagChange}
             postImageUrlMap={postImageUrlMap}
-            onPostClick={(id) => {
-              pushHistoryState({ bocchiSns: true, view: "detail", postId: id });
-            }}
+            onPostClick={openPostDetail}
+            onPostEdit={openEditComposer}
             onPostTypeChange={handlePostTypeChange}
             onPostOgpFetched={(post, ogp) => {
               if (ogp) updatePostOgp(post, ogp);
             }}
             onPostDelete={deletePost}
+            imageViewerRoute={imageViewerRoute}
+            imageViewerOriginRect={imageViewerOriginRect}
+            onImageViewerOpen={openImageViewer}
+            onImageViewerClose={closeImageViewer}
             isBooting={isBooting}
             header={
               <AppHeader
@@ -501,17 +618,37 @@ export default function Home() {
         </>
       )}
 
+      {activeView === "calendar" && (
+        <CalendarView
+          posts={posts}
+          postImageUrlMap={postImageUrlMap}
+          onPostClick={openPostDetail}
+          onPostEdit={openEditComposer}
+          onTagClick={(tag) => {
+            resetToHome(tag);
+          }}
+        />
+      )}
+
       {activeView === "profile" && (
         <div className="p-10 text-center">プロフィール機能は準備中です。</div>
       )}
 
       <BottomNav
-        activeView={activeView === "profile" ? "profile" : "home"}
+        activeView={activeView === "profile" ? "profile" : activeView === "calendar" ? "calendar" : "home"}
         onViewChange={(view) => {
           if (view === "post") {
             openNewComposer();
           } else if (view === "home" && activeViewRef.current === "home") {
             requestTimelineTop();
+          } else if (view === "home") {
+            setTimelineChromeHidden(false);
+            resetToHome(null);
+            scrollViewportToTop("auto");
+          } else if (view === "calendar") {
+            setTimelineChromeHidden(false);
+            resetToCalendar();
+            scrollViewportToTop("auto");
           } else {
             setTimelineChromeHidden(false);
             pushHistoryState({ bocchiSns: true, view });
@@ -539,6 +676,7 @@ export default function Home() {
         isBusy={isBusy}
         imagePreviewUrls={composerPreviewUrls}
       />
+      {postImageViewer}
     </main>
   );
 }

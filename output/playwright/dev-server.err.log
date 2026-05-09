@@ -1,0 +1,766 @@
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
++                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="pvehkq5mw7"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="o889yfehf8j"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="d8rxkerkvik"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="8fp369mfz1n"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="8aetqsjwsf3"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="l7fjl5s2pp"
+                        >
+                  ...
+ 
+[browser] Encountered two children with the same key, `[object Object]`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. 
+    at Set.forEach (<anonymous>) (<anonymous>)
+[browser] Encountered two children with the same key, `[object Object]`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. 
+    at Set.forEach (<anonymous>) (<anonymous>)
+[browser] Encountered two children with the same key, `[object Object]`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. 
+[browser] Encountered two children with the same key, `[object Object]`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. 
+[browser] Uncaught Error: Objects are not valid as a React child (found: object with keys {name, count}). If you meant to render a collection of children, use an array instead.
+    at Home (src/app/page.tsx:476:14)
+  474 |         <div className="absolute top-20 left-0 right-0 z-50 px-4 pointer-events-none">
+  475 |           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-re...
+> 476 |             {imageError}
+      |              ^
+  477 |           </div>
+  478 |         </div>
+  479 |       )}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
++                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="ylh6x8a0ki"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="v8nqd43ldhk"
+                        >
+                  ...
+ 
+⨯ ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  [90m185 |[0m     [36mconst[0m rect = e.currentTarget.getBoundingClientRect();
+  [90m186 |[0m     setViewerOriginRect({
+[31m[1m>[0m [90m187 |[0m     onImageOpen?.(post, index, {
+  [90m    |[0m                [31m[1m^[0m
+  [90m188 |[0m       top: rect.top,
+  [90m189 |[0m       left: rect.left,
+  [90m190 |[0m       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+⨯ ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  [90m185 |[0m     [36mconst[0m rect = e.currentTarget.getBoundingClientRect();
+  [90m186 |[0m     setViewerOriginRect({
+[31m[1m>[0m [90m187 |[0m     onImageOpen?.(post, index, {
+  [90m    |[0m                [31m[1m^[0m
+  [90m188 |[0m       top: rect.top,
+  [90m189 |[0m       left: rect.left,
+  [90m190 |[0m       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+⨯ ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  [90m185 |[0m     [36mconst[0m rect = e.currentTarget.getBoundingClientRect();
+  [90m186 |[0m     setViewerOriginRect({
+[31m[1m>[0m [90m187 |[0m     onImageOpen?.(post, index, {
+  [90m    |[0m                [31m[1m^[0m
+  [90m188 |[0m       top: rect.top,
+  [90m189 |[0m       left: rect.left,
+  [90m190 |[0m       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+⨯ ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  [90m185 |[0m     [36mconst[0m rect = e.currentTarget.getBoundingClientRect();
+  [90m186 |[0m     setViewerOriginRect({
+[31m[1m>[0m [90m187 |[0m     onImageOpen?.(post, index, {
+  [90m    |[0m                [31m[1m^[0m
+  [90m188 |[0m       top: rect.top,
+  [90m189 |[0m       left: rect.left,
+  [90m190 |[0m       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+⨯ ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  [90m185 |[0m     [36mconst[0m rect = e.currentTarget.getBoundingClientRect();
+  [90m186 |[0m     setViewerOriginRect({
+[31m[1m>[0m [90m187 |[0m     onImageOpen?.(post, index, {
+  [90m    |[0m                [31m[1m^[0m
+  [90m188 |[0m       top: rect.top,
+  [90m189 |[0m       left: rect.left,
+  [90m190 |[0m       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+⨯ ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  [90m185 |[0m     [36mconst[0m rect = e.currentTarget.getBoundingClientRect();
+  [90m186 |[0m     setViewerOriginRect({
+[31m[1m>[0m [90m187 |[0m     onImageOpen?.(post, index, {
+  [90m    |[0m                [31m[1m^[0m
+  [90m188 |[0m       top: rect.top,
+  [90m189 |[0m       left: rect.left,
+  [90m190 |[0m       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+[browser] Uncaught Error: ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  185 |     const rect = e.currentTarget.getBoundingClientRect();
+  186 |     setViewerOriginRect({
+> 187 |     onImageOpen?.(post, index, {
+      |                ^
+  188 |       top: rect.top,
+  189 |       left: rect.left,
+  190 |       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./src/components/ui/post-card.tsx:187:16)
+    at <unknown> (Error: (./src/components/ui/post-card.tsx:187:16)
+[browser] Uncaught Error: ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  185 |     const rect = e.currentTarget.getBoundingClientRect();
+  186 |     setViewerOriginRect({
+> 187 |     onImageOpen?.(post, index, {
+      |                ^
+  188 |       top: rect.top,
+  189 |       left: rect.left,
+  190 |       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./src/components/ui/post-card.tsx:187:16)
+    at <unknown> (Error: (./src/components/ui/post-card.tsx:187:16)
+[browser] Uncaught Error: ./src/components/ui/post-card.tsx:187:16
+An object member cannot be declared optional
+  185 |     const rect = e.currentTarget.getBoundingClientRect();
+  186 |     setViewerOriginRect({
+> 187 |     onImageOpen?.(post, index, {
+      |                ^
+  188 |       top: rect.top,
+  189 |       left: rect.left,
+  190 |       width: rect.width,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./src/components/ui/post-card.tsx [Client Component Browser]
+    ./src/components/post-detail.tsx [Client Component Browser]
+    ./src/app/page.tsx [Client Component Browser]
+    ./src/app/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/components/ui/post-card.tsx [Client Component SSR]
+    ./src/components/post-detail.tsx [Client Component SSR]
+    ./src/app/page.tsx [Client Component SSR]
+    ./src/app/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./src/components/ui/post-card.tsx:187:16)
+    at <unknown> (Error: (./src/components/ui/post-card.tsx:187:16)
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
++                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="46w3anvbok6"
+                        >
+                  ...
+ 
+[browser] The final argument passed to useEffect changed size between renders. The order and size of this array must remain constant.
+
+Previous: [home, , (hidden)=>{
+            isTopChromeHiddenRef.current = hidden;
+            document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+        }]
+Incoming: [, home, , (hidden)=>{
+            isTopChromeHiddenRef.current = hidden;
+            document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+        }] 
+    at Home (src/app/page.tsx:186:26)
+    at Set.forEach (<anonymous>)
+  184 |     replaceHistoryState(homeState);
+  185 |     applyHistoryState(homeState);
+> 186 |   }, [applyHistoryState, replaceHistoryState]);
+      |                          ^
+  187 |
+  188 |   useEffect(() => {
+  189 |     activeViewRef.current = activeView; (src/app/page.tsx:186:26)
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
++                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="7agswvm3rmo"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="bqgd7xrp8d7"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+                          className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="lsbaondad9d"
+                        >
+                  ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
++                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         className="manrope_de7b2fa9-module__1ltb7q__variable jetbrains_mono_7d65b77b-module__VxV-Ta_..."
+-                         data-arp=""
+-                         data-redeviation-bs-uid="qlqlwh4a81m"
+                        >
+                  ...
+ 

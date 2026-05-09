@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "figma-mcp-free/**",
+    "temp_figma/**",
+    "output/**",
+    ".playwright-cli/**",
   ]),
 ]);
 

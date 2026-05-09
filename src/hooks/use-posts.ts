@@ -16,6 +16,11 @@ export type PostFormValue = {
   imageBlobs?: Blob[];
 };
 
+export type AvailableTag = {
+  name: string;
+  count: number;
+};
+
 const emptyForm: PostFormValue = {
   type: "post",
   body: "",
@@ -126,7 +131,7 @@ export function usePosts() {
     });
     return Array.from(tagCounts.entries())
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"))
-      .map(([tag]) => tag);
+      .map(([name, count]) => ({ name, count }));
   }, [tabFilteredPosts]);
 
   const visiblePosts = useMemo(() => {
@@ -150,7 +155,7 @@ export function usePosts() {
 
 
   useEffect(() => {
-    if (activeTag && !availableTags.includes(activeTag)) {
+    if (activeTag && !availableTags.some((tag) => tag.name === activeTag)) {
       const syncTimer = setTimeout(() => {
         setActiveTag(null);
       }, 0);

@@ -3,37 +3,30 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import type { ImageOriginRect } from "@/types/navigation";
 
 type ImageViewerProps = {
   images: string[];
   initialIndex?: number;
-  originRect?: {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null;
-  getOriginRect?: (index: number) => Rect | null;
+  originRect?: ImageOriginRect | null;
+  getOriginRect?: (index: number) => ImageOriginRect | null;
   onClose: () => void;
-};
-
-type Rect = {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
 };
 
 export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRect, onClose }: ImageViewerProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
   const [dragOffsetY, setDragOffsetY] = useState(0);
+  const [isHorizontalDragging, setIsHorizontalDragging] = useState(false);
   const [isClosingToOrigin, setIsClosingToOrigin] = useState(false);
-  const [closingRect, setClosingRect] = useState<Rect | null>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
+  const [closingRect, setClosingRect] = useState<ImageOriginRect | null>(null);
+  const imageRefs = useRef(new Map<number, HTMLImageElement>());
   const dragFrameRef = useRef<number | null>(null);
   const pendingDragOffsetRef = useRef(0);
+  const slideFrameRef = useRef<number | null>(null);
+  const pendingDragOffsetXRef = useRef(0);
   const portalRoot = typeof document === "undefined" ? null : document.body;
 
   // 最小スワイプ距離(px)
@@ -47,6 +40,10 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     setCurrentIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1));
   }, [images.length]);
 
+  const requestClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
   const scheduleDragOffset = useCallback((nextOffset: number) => {
     pendingDragOffsetRef.current = nextOffset;
     if (dragFrameRef.current !== null) return;
@@ -54,6 +51,16 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     dragFrameRef.current = window.requestAnimationFrame(() => {
       dragFrameRef.current = null;
       setDragOffsetY(pendingDragOffsetRef.current);
+    });
+  }, []);
+
+  const scheduleDragOffsetX = useCallback((nextOffset: number) => {
+    pendingDragOffsetXRef.current = nextOffset;
+    if (slideFrameRef.current !== null) return;
+
+    slideFrameRef.current = window.requestAnimationFrame(() => {
+      slideFrameRef.current = null;
+      setDragOffsetX(pendingDragOffsetXRef.current);
     });
   }, []);
 
@@ -68,7 +75,9 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     window.addEventListener("touchmove", preventScroll, { passive: false });
     window.addEventListener("wheel", preventScroll, { passive: false });
 
-    window.setTimeout(onClose, delay);
+    window.setTimeout(() => {
+      onClose();
+    }, delay);
 
     requestAnimationFrame(() => {
       window.scrollTo(0, scrollY);
@@ -94,7 +103,7 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
       return;
     }
 
-    const imageRect = imageRef.current?.getBoundingClientRect();
+    const imageRect = imageRefs.current.get(currentIndex)?.getBoundingClientRect();
     setClosingRect(imageRect ? {
       top: imageRect.top,
       left: imageRect.left,
@@ -117,7 +126,10 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
   }, [closeAfterKillingScroll, currentIndex, getOriginRect, originRect]);
 
   const onTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
     setTouchEnd(null);
+    setIsHorizontalDragging(false);
+    scheduleDragOffsetX(0);
     scheduleDragOffset(0);
     setTouchStart({
       x: e.targetTouches[0].clientX,
@@ -126,6 +138,7 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (!touchStart) return;
 
     const nextTouch = {
@@ -136,12 +149,22 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     const deltaY = nextTouch.y - touchStart.y;
 
     setTouchEnd(nextTouch);
+    if (Math.abs(deltaX) > Math.abs(deltaY) && images.length > 1) {
+      setIsHorizontalDragging(true);
+      scheduleDragOffset(0);
+      scheduleDragOffsetX(Math.max(-window.innerWidth, Math.min(deltaX, window.innerWidth)));
+      return;
+    }
+
     if (Math.abs(deltaY) > Math.abs(deltaX) * 1.2) {
+      setIsHorizontalDragging(false);
+      scheduleDragOffsetX(0);
       scheduleDragOffset(Math.max(-160, Math.min(deltaY, 160)));
     }
   };
 
-  const onTouchEnd = () => {
+  const onTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (!touchStart || !touchEnd) {
       scheduleDragOffset(0);
       return;
@@ -153,7 +176,10 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     const isLeftSwipe = deltaX < -minSwipeDistance && Math.abs(deltaX) > Math.abs(deltaY);
     const isRightSwipe = deltaX > minSwipeDistance && Math.abs(deltaX) > Math.abs(deltaY);
 
+    setIsHorizontalDragging(false);
+
     if (isVerticalClose) {
+      scheduleDragOffsetX(0);
       closeToOrigin();
       return;
     }
@@ -164,6 +190,7 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     if (isRightSwipe) {
       handlePrev();
     }
+    scheduleDragOffsetX(0);
     scheduleDragOffset(0);
   };
 
@@ -171,24 +198,34 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     if (!portalRoot) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
       if (e.key === "ArrowRight") handleNext();
       if (e.key === "ArrowLeft") handlePrev();
     };
     const originalOverflow = document.body.style.overflow;
+    const originalImageViewerState = document.documentElement.dataset.imageViewer;
 
     window.addEventListener("keydown", handleKeyDown);
+    document.documentElement.dataset.imageViewer = "open";
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      if (originalImageViewerState === undefined) {
+        delete document.documentElement.dataset.imageViewer;
+      } else {
+        document.documentElement.dataset.imageViewer = originalImageViewerState;
+      }
       document.body.style.overflow = originalOverflow;
     };
-  }, [handleNext, handlePrev, onClose, portalRoot]);
+  }, [handleNext, handlePrev, portalRoot, requestClose]);
 
   useEffect(() => {
     return () => {
       if (dragFrameRef.current !== null) {
         window.cancelAnimationFrame(dragFrameRef.current);
+      }
+      if (slideFrameRef.current !== null) {
+        window.cancelAnimationFrame(slideFrameRef.current);
       }
     };
   }, []);
@@ -197,11 +234,16 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
 
   return createPortal(
     <div
+      data-image-viewer="true"
       className="fixed inset-0 z-[100] flex flex-col transition-[background-color,backdrop-filter] duration-[230ms] ease-out"
       style={{
         backgroundColor: isClosingToOrigin ? "rgba(0,0,0,0)" : "rgba(0,0,0,0.95)",
         backdropFilter: isClosingToOrigin ? "blur(0px)" : "blur(4px)",
       }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onPointerCancel={(e) => e.stopPropagation()}
     >
       {/* ヘッダー */}
       <div
@@ -212,8 +254,9 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
           {currentIndex + 1} / {images.length}
         </div>
         <button
-          onClick={onClose}
+          onClick={requestClose}
           className="rounded-full bg-black/50 p-2 text-white/80 transition-colors hover:bg-black/80 hover:text-white"
+          aria-label="画像ビューアを閉じる"
         >
           <X size={24} />
         </button>
@@ -226,7 +269,7 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onClick={onClose}
+        onClick={requestClose}
       >
         <div
           className="flex items-center justify-center ease-out will-change-transform"
@@ -241,8 +284,10 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
                   zIndex: 1,
                 }
               : {
+                  height: "100%",
                   maxHeight: "100%",
                   maxWidth: "100%",
+                  width: "100%",
                 }),
             transform: closingRect ? "none" : `translateY(${dragOffsetY}px)`,
             opacity: Math.max(0.72, 1 - Math.abs(dragOffsetY) / 420),
@@ -251,15 +296,52 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
             transitionTimingFunction: isClosingToOrigin ? "cubic-bezier(0.2, 0.8, 0.2, 1)" : undefined,
           }}
         >
-          {/* User-selected blob URLs need native img behavior for the gesture viewer. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            ref={imageRef}
-            src={images[currentIndex]}
-            alt={`View ${currentIndex + 1}`}
-            className={`select-none ${closingRect ? "h-full w-full object-cover" : "max-h-full max-w-full object-contain"}`}
-            onClick={(e) => e.stopPropagation()}
-          />
+          {closingRect ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              ref={(node) => {
+                if (node) {
+                  imageRefs.current.set(currentIndex, node);
+                } else {
+                  imageRefs.current.delete(currentIndex);
+                }
+              }}
+              src={images[currentIndex]}
+              alt={`View ${currentIndex + 1}`}
+              className="h-full w-full select-none object-cover"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div
+              className="flex h-full w-screen will-change-transform"
+              style={{
+                transform: `translateX(calc(${-currentIndex * 100}% + ${dragOffsetX}px))`,
+                transition: isHorizontalDragging
+                  ? "none"
+                  : "transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+              }}
+            >
+              {images.map((image, index) => (
+                <div key={`${image}-${index}`} className="flex h-full w-screen shrink-0 items-center justify-center px-3">
+                  {/* User-selected blob URLs need native img behavior for the gesture viewer. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    ref={(node) => {
+                      if (node) {
+                        imageRefs.current.set(index, node);
+                      } else {
+                        imageRefs.current.delete(index);
+                      }
+                    }}
+                    src={image}
+                    alt={`View ${index + 1}`}
+                    className="max-h-full max-w-full select-none object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 左右ナビゲーション (PC向け) */}
@@ -270,18 +352,20 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
                 e.stopPropagation();
                 handlePrev();
               }}
-              className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-3 text-white/80 hidden sm:block hover:bg-black/80 hover:text-white transition-colors"
+              className="image-viewer-nav-button absolute left-2 top-1/2 h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/80 hover:text-white sm:left-4 sm:h-14 sm:w-14"
+              aria-label="前の画像"
             >
-              <ChevronLeft size={32} />
+              <ChevronLeft size={28} />
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleNext();
               }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-3 text-white/80 hidden sm:block hover:bg-black/80 hover:text-white transition-colors"
+              className="image-viewer-nav-button absolute right-2 top-1/2 h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/80 hover:text-white sm:right-4 sm:h-14 sm:w-14"
+              aria-label="次の画像"
             >
-              <ChevronRight size={32} />
+              <ChevronRight size={28} />
             </button>
           </>
         )}

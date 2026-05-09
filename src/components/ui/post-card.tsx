@@ -2,27 +2,26 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { memo, useState, useEffect, useRef } from "react";
-import { Copy, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft } from "lucide-react";
-import { ImageViewer } from "@/components/ui/image-viewer";
+import { Copy, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import type { ImageOriginRect } from "@/types/navigation";
 import type { OgpPreview, Post, PostType } from "@/types/post";
 
 type PostCardProps = {
   post: Post;
   imageUrls?: string[];
   onClick?: () => void;
+  onEdit?: () => void;
   onTagClick?: (tag: string) => void;
   onTypeChange?: (nextType: PostType) => void;
   onOgpFetched?: (ogp: OgpPreview) => void;
+  onImageOpen?: (post: Post, index: number, originRect: ImageOriginRect) => void;
   isDetail?: boolean;
 };
 
 function formatTime(iso: string) {
   try {
     return new Intl.DateTimeFormat("ja-JP", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
     }).format(new Date(iso));
@@ -58,19 +57,14 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
-function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange, onOgpFetched, isDetail = false }: PostCardProps) {
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const [viewerOriginRect, setViewerOriginRect] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null>(null);
+function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTypeChange, onOgpFetched, onImageOpen, isDetail = false }: PostCardProps) {
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [shouldFetchOgp, setShouldFetchOgp] = useState(isDetail);
   const [shouldLoadImages, setShouldLoadImages] = useState(isDetail);
   const articleRef = useRef<HTMLElement>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
 
@@ -119,6 +113,19 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
     return () => observer.disconnect();
   }, [isDetail, post.ogp, post.url, shouldFetchOgp]);
 
+  useEffect(() => {
+    if (!isActionMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (actionMenuRef.current?.contains(target)) return;
+      setIsActionMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isActionMenuOpen]);
+
   // OGP情報を取得
   useEffect(() => {
     if (post.ogp) {
@@ -150,25 +157,38 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsActionMenuOpen(false);
     await copyTextToClipboard(post.body);
   };
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsActionMenuOpen(false);
     const text = encodeURIComponent(post.body);
     window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsActionMenuOpen(false);
+    (onEdit ?? onClick)?.();
+  };
+
+  const handleMoveType = (e: React.MouseEvent, nextType: PostType) => {
+    e.stopPropagation();
+    setIsActionMenuOpen(false);
+    onTypeChange?.(nextType);
   };
 
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>, index: number) => {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
-    setViewerOriginRect({
+    onImageOpen?.(post, index, {
       top: rect.top,
       left: rect.left,
       width: rect.width,
       height: rect.height,
     });
-    setViewerIndex(index);
   };
 
   const movableType = post.type === "post" ? "clip" : post.type === "clip" ? "post" : null;
@@ -179,16 +199,12 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 
     const count = imageUrls.length;
     if (!shouldLoadImages) {
-      if (count === 1) {
-        return <div className="mb-4 aspect-[3/2] rounded-lg border border-border bg-black/5" />;
-      }
-
-      return <div className="mb-4 aspect-[3/2] rounded-lg border border-border bg-black/5" />;
+      return <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] rounded-t-xl border-b border-border bg-black/5" />;
     }
 
     if (isDetail) {
       return (
-        <div className="mb-4 flex flex-col gap-3">
+        <div data-card-media className="mb-4 flex flex-col gap-3">
           {imageUrls.map((url, i) => (
             <div key={i} className="overflow-hidden rounded-lg border border-border bg-black/5">
               <img
@@ -207,13 +223,13 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 
     if (count === 1) {
       return (
-        <div className="mb-4 overflow-hidden rounded-lg border border-border bg-black/5 max-h-[400px]">
+        <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5">
           <img
             src={imageUrls[0]}
             alt=""
             loading="lazy"
             decoding="async"
-            className="h-full w-full object-contain cursor-pointer transition-opacity hover:opacity-90"
+            className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90"
             onClick={(e) => handleImageClick(e, 0)}
           />
         </div>
@@ -222,7 +238,7 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 
     if (count === 2) {
       return (
-        <div className="mb-4 grid aspect-[3/2] grid-cols-2 gap-1 overflow-hidden rounded-lg border border-border">
+        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
           {imageUrls.map((url, i) => (
             <img key={i} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, i)} />
           ))}
@@ -232,7 +248,7 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 
     if (count === 3) {
       return (
-        <div className="mb-4 grid aspect-[3/2] grid-cols-2 gap-1 overflow-hidden rounded-lg border border-border">
+        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
           <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 0)} />
           <div className="grid grid-rows-2 gap-1 h-full overflow-hidden">
             <img src={imageUrls[1]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 1)} />
@@ -244,7 +260,7 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 
     if (count >= 4) {
       return (
-        <div className="mb-4 grid aspect-[3/2] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-lg border border-border">
+        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
           {imageUrls.slice(0, 4).map((url, i) => (
             <img key={i} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, i)} />
           ))}
@@ -323,82 +339,85 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
           {renderBodyWithLinks(post.body)}
         </p>
 
-        {post.tags && post.tags.length > 0 && (
-          <div className="mb-4 flex flex-wrap gap-2">
-            {post.tags.map((tag, index) => (
-              <button
-                type="button"
-                key={index}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTagClick?.(tag);
-                }}
-                className="rounded-full bg-secondary px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title={`#${tag}で絞り込み`}
-              >
-                #{tag}
-              </button>
-            ))}
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <time className="shrink-0 text-sm text-muted-foreground">
+              {formatTime(post.updatedAt)}
+            </time>
+            {post.tags && post.tags.length > 0 && (
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
+                {post.tags.map((tag, index) => (
+                  <button
+                    type="button"
+                    key={index}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTagClick?.(tag);
+                    }}
+                    className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    title={`#${tag}で絞り込み`}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <time className="text-sm text-muted-foreground">
-            {formatTime(post.updatedAt)}
-          </time>
-          <div className="flex items-center gap-1">
+          <div ref={actionMenuRef} className="relative shrink-0">
             <button
-              onClick={handleCopy}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-              title="コピー"
-            >
-              <Copy size={16} />
-            </button>
-            <button
-              onClick={handleShare}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-              title="Xへ投稿"
-            >
-              <Share size={16} />
-            </button>
-            <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onClick?.();
+                setIsActionMenuOpen((current) => !current);
               }}
               className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-              title="編集"
+              title="操作メニュー"
+              aria-label="操作メニュー"
+              aria-expanded={isActionMenuOpen}
             >
-              <Edit3 size={16} />
+              <MoreHorizontal size={18} />
             </button>
-            {movableType && onTypeChange && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTypeChange(movableType);
-                }}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-                title={moveLabel}
-                aria-label={moveLabel}
-              >
-                <ArrowRightLeft size={16} />
-              </button>
+            {isActionMenuOpen && (
+              <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                >
+                  <Copy size={15} />
+                  <span>コピー</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                >
+                  <Share size={15} />
+                  <span>Xへ投稿</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                >
+                  <Edit3 size={15} />
+                  <span>編集</span>
+                </button>
+                {movableType && onTypeChange && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleMoveType(e, movableType)}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  >
+                    <ArrowRightLeft size={15} />
+                    <span>{moveLabel}</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
       </article>
-
-      {viewerIndex !== null && imageUrls && (
-        <ImageViewer
-          images={imageUrls}
-          initialIndex={viewerIndex}
-          originRect={viewerOriginRect}
-          onClose={() => {
-            setViewerIndex(null);
-            setViewerOriginRect(null);
-          }}
-        />
-      )}
     </>
   );
 }
@@ -406,5 +425,6 @@ function PostCardComponent({ post, imageUrls, onClick, onTagClick, onTypeChange,
 export const PostCard = memo(PostCardComponent, (prev, next) => (
   prev.post === next.post
   && prev.imageUrls === next.imageUrls
+  && prev.onImageOpen === next.onImageOpen
   && prev.isDetail === next.isDetail
 ));
