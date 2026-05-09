@@ -30,6 +30,34 @@ type AppHistoryState = {
   imageViewer?: ImageViewerRoute | null;
 };
 
+type NativeSharePayload = {
+  text?: string;
+  subject?: string;
+  title?: string;
+};
+
+type PendingShareImport = {
+  url: string;
+  memo: string;
+};
+
+function parseSharedText(payload: NativeSharePayload): PendingShareImport {
+  const text = payload.text?.trim() ?? "";
+  const subject = payload.subject?.trim() ?? "";
+  const title = payload.title?.trim() ?? "";
+  const urlMatch = text.match(/https?:\/\/[^\s]+/);
+  const url = urlMatch?.[0] ?? "";
+  const memoParts = [
+    subject || title,
+    url ? text.replace(url, "").trim() : text,
+  ].filter(Boolean);
+
+  return {
+    url,
+    memo: Array.from(new Set(memoParts)).join("\n"),
+  };
+}
+
 export default function Home() {
   const {
     posts,
@@ -68,6 +96,7 @@ export default function Home() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [composerValue, setComposerValue] = useState(emptyForm);
   const [imageError, setImageError] = useState<string>("");
+  const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
   const activeViewRef = useRef<ActiveView>("home");
   const selectedPostIdRef = useRef<string | null>(null);
   const activeTagRef = useRef<string | null>(null);
@@ -78,6 +107,7 @@ export default function Home() {
   const scrollFrameRef = useRef<number | null>(null);
   const scrollChromeTimerRef = useRef<number | null>(null);
   const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
+  const nativeShareDedupRef = useRef<{ key: string; receivedAt: number } | null>(null);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
@@ -379,6 +409,25 @@ export default function Home() {
   }, [moveToHistoryState]);
 
   useEffect(() => {
+    const handleNativeShare = (event: Event) => {
+      const customEvent = event as CustomEvent<NativeSharePayload>;
+      const nextShare = parseSharedText(customEvent.detail ?? {});
+      if (!nextShare.url && !nextShare.memo) return;
+      const shareKey = `${nextShare.url}\n${nextShare.memo}`;
+      const now = Date.now();
+      const lastShare = nativeShareDedupRef.current;
+      if (lastShare?.key === shareKey && now - lastShare.receivedAt < 2500) return;
+      nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
+
+      setPendingShareImport(nextShare);
+      pushHistoryState({ bocchiSns: true, view: "share" });
+    };
+
+    window.addEventListener("bocchiShareIntent", handleNativeShare);
+    return () => window.removeEventListener("bocchiShareIntent", handleNativeShare);
+  }, [pushHistoryState]);
+
+  useEffect(() => {
     if (isEditorOpen && selectedPost) {
       const syncTimer = setTimeout(() => {
         setComposerValue(fromPost(selectedPost));
@@ -591,9 +640,12 @@ export default function Home() {
     return (
       <main className="flex flex-col flex-1">
         <ShareImport
+          key={`${pendingShareImport?.url ?? ""}\n${pendingShareImport?.memo ?? ""}`}
           onBack={goBackOrHome}
           onImport={handleImportShare}
           isBusy={isBusy}
+          initialUrl={pendingShareImport?.url ?? ""}
+          initialMemo={pendingShareImport?.memo ?? ""}
         />
       </main>
     );
