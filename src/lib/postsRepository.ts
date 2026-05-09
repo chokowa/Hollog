@@ -5,7 +5,7 @@ export interface PostsRepository {
   list(): Promise<Post[]>;
   getById(id: string): Promise<Post | null>;
   create(input: PostRecordInput): Promise<Post>;
-  update(id: string, input: Partial<PostRecordInput>): Promise<Post>;
+  update(id: string, input: Partial<PostRecordInput>, options?: { touchUpdatedAt?: boolean }): Promise<Post>;
   updateOgp(id: string, ogp: Post["ogp"]): Promise<Post>;
   delete(id: string): Promise<void>;
 }

@@ -18,6 +18,7 @@ export type Post = {
   ogp?: OgpPreview;
   imageBlob?: Blob;
   imageBlobs?: Blob[];
+  thumbnailBlobs?: Blob[];
   tags: string[];
   source: PostSource;
   createdAt: string;

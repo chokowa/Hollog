@@ -17,6 +17,7 @@ type PostFeedProps = {
   availableTags: AvailableTag[];
   onTagChange: (tag: string | null) => void;
   postImageUrlMap: Record<string, string[]>;
+  postThumbnailUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
   onPostEdit: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
@@ -253,6 +254,7 @@ export function PostFeed({
   availableTags,
   onTagChange,
   postImageUrlMap,
+  postThumbnailUrlMap,
   onPostClick,
   onPostEdit,
   onPostTypeChange,
@@ -283,15 +285,15 @@ export function PostFeed({
     : INITIAL_VISIBLE_ITEMS;
   const mediaItems = useMemo<MediaItem[]>(() => {
     return posts.flatMap((post) => {
-      const urls = postImageUrlMap[post.id] || [];
-      return urls.map((url, imageIndex) => ({
+      const thumbnailUrls = postThumbnailUrlMap[post.id] || [];
+      return thumbnailUrls.map((url, imageIndex) => ({
         post,
         url,
         imageIndex,
         mediaKey: `${post.id}-${imageIndex}`,
       }));
     });
-  }, [postImageUrlMap, posts]);
+  }, [postThumbnailUrlMap, posts]);
   const timelinePosts = useMemo(
     () => posts.filter((post) => !pendingDeletedPosts[post.id]),
     [pendingDeletedPosts, posts],
@@ -622,9 +624,9 @@ export function PostFeed({
                       className="timeline-card-shell"
                     >
                       <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
-                        <PostCard
+                          <PostCard
                           post={post}
-                          imageUrls={postImageUrlMap[post.id]}
+                          imageUrls={postThumbnailUrlMap[post.id]}
                           onEdit={() => onPostEdit(post)}
                           onTagClick={handleTagChange}
                           onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
@@ -655,7 +657,7 @@ export function PostFeed({
       {imageViewerRoute?.kind === "media" && visibleMediaItems.length > 0 && (
         <ImageViewer
           key={`media-${imageViewerRoute.index}`}
-          images={visibleMediaItems.map((item) => item.url)}
+          images={visibleMediaItems.map((item) => postImageUrlMap[item.post.id]?.[item.imageIndex] ?? item.url)}
           initialIndex={Math.min(Math.max(imageViewerRoute.index, 0), visibleMediaItems.length - 1)}
           originRect={imageViewerOriginRect}
           getOriginRect={getMediaOriginRect}

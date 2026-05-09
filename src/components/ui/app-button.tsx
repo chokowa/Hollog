@@ -11,7 +11,7 @@ type AppButtonProps = PropsWithChildren<
 
 const variantClassNames: Record<ButtonVariant, string> = {
   primary:
-    "bg-[var(--accent)] text-white shadow-[0_12px_24px_rgba(232,93,57,0.28)] hover:bg-[var(--accent-deep)]",
+    "bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(3,2,19,0.16)] hover:bg-primary/90",
   secondary:
     "bg-[var(--secondary-soft)] text-[var(--secondary)] hover:bg-[#cddcff]",
   ghost:

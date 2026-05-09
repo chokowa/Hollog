@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Camera, ImagePlus, Link2, Tags, X, Clipboard, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
+import { fetchOgpPreview } from "@/lib/ogp-preview";
 import { readTagSuggestions, writeTagSuggestions } from "@/lib/tag-suggestions";
 import type { OgpPreview, PostType } from "@/types/post";
 
@@ -70,20 +71,9 @@ export function PostComposer({
     lastFetchedUrl.current = url;
     setOgpLoading(true);
     try {
-      const res = await fetch(`/api/ogp?url=${encodeURIComponent(url)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.title || data.image) {
-          setOgp(data);
-          latestOnChangeRef.current({ ...latestValueRef.current, ogp: data });
-        } else {
-          setOgp(null);
-          latestOnChangeRef.current({ ...latestValueRef.current, ogp: undefined });
-        }
-      } else {
-        setOgp(null);
-        latestOnChangeRef.current({ ...latestValueRef.current, ogp: undefined });
-      }
+      const data = await fetchOgpPreview(url);
+      setOgp(data);
+      latestOnChangeRef.current({ ...latestValueRef.current, ogp: data ?? undefined });
     } catch {
       setOgp(null);
       latestOnChangeRef.current({ ...latestValueRef.current, ogp: undefined });

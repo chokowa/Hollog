@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "temp_figma/**",
     "output/**",
     ".playwright-cli/**",
+    "android/**",
   ]),
 ]);
 

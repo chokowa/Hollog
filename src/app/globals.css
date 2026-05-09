@@ -89,6 +89,41 @@ textarea {
   font: inherit;
 }
 
+.bocchi-checkbox {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  border: 1.5px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--card);
+  color: var(--primary-foreground);
+  cursor: pointer;
+}
+
+.bocchi-checkbox::after {
+  content: "";
+  width: 0.35rem;
+  height: 0.6rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg) translateY(-1px);
+}
+
+.bocchi-checkbox:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.bocchi-checkbox:checked::after {
+  opacity: 1;
+}
+
+.bocchi-checkbox:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 ::selection {
   background: rgba(255, 122, 89, 0.22);
 }

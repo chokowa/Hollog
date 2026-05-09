@@ -16,6 +16,14 @@ export const metadata: Metadata = {
   title: "Bocchi SNS",
   description: "Local-first personal SNS home screen powered by Next.js and IndexedDB",
   manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Bocchi SNS",
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export default function RootLayout({
@@ -25,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="ja"
       className={`${manrope.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-secondary text-foreground">

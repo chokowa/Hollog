@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { postsRepository } from "@/lib/postsRepository";
+import { uniqueTags } from "@/lib/tag-suggestions";
 import type { OgpPreview, Post, PostRecordInput, TimelineFilter } from "@/types/post";
 
 const HIDE_POSTED_IN_SOURCE_TABS_KEY = "bocchisns_hide_posted_in_source_tabs";
@@ -30,6 +32,7 @@ const emptyForm: PostFormValue = {
 
 const blobUrlCache = new Map<Blob, string>();
 const postImageUrlListCache = new Map<string, { key: string; urls: string[] }>();
+const postThumbnailUrlListCache = new Map<string, { key: string; urls: string[] }>();
 
 function toRecordInput(value: PostFormValue): PostRecordInput {
   return {
@@ -46,6 +49,77 @@ function toRecordInput(value: PostFormValue): PostRecordInput {
   } as PostRecordInput;
 }
 
+function getOriginalImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob">) {
+  return post.imageBlobs && post.imageBlobs.length > 0 ? post.imageBlobs : (post.imageBlob ? [post.imageBlob] : []);
+}
+
+function getThumbnailImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob" | "thumbnailBlobs">) {
+  const originalBlobs = getOriginalImageBlobs(post);
+  if (post.thumbnailBlobs && post.thumbnailBlobs.length === originalBlobs.length && post.thumbnailBlobs.length > 0) {
+    return post.thumbnailBlobs;
+  }
+
+  return originalBlobs;
+}
+
+function areBlobListsEqual(left: Blob[] | undefined, right: Blob[] | undefined) {
+  const leftList = left ?? [];
+  const rightList = right ?? [];
+
+  if (leftList.length !== rightList.length) {
+    return false;
+  }
+
+  return leftList.every((blob, index) => blob === rightList[index]);
+}
+
+function areStringListsEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values));
+}
+
+function buildPostUrlMap(
+  posts: Post[],
+  getBlobs: (post: Post) => Blob[],
+  listCache: Map<string, { key: string; urls: string[] }>,
+) {
+  const urls: Record<string, string[]> = {};
+
+  posts.forEach((post) => {
+    const blobs = getBlobs(post);
+    if (blobs.length === 0) {
+      return;
+    }
+
+    const nextUrls = blobs.map((blob) => {
+      const cachedUrl = blobUrlCache.get(blob);
+      if (cachedUrl) return cachedUrl;
+
+      const nextUrl = URL.createObjectURL(blob);
+      blobUrlCache.set(blob, nextUrl);
+      return nextUrl;
+    });
+    const cacheKey = nextUrls.join("\n");
+    const cachedList = listCache.get(post.id);
+
+    if (cachedList?.key === cacheKey) {
+      urls[post.id] = cachedList.urls;
+    } else {
+      listCache.set(post.id, { key: cacheKey, urls: nextUrls });
+      urls[post.id] = nextUrls;
+    }
+  });
+
+  return urls;
+}
+
 function fromPost(post: Post): PostFormValue {
   return {
     type: post.type,
@@ -54,7 +128,7 @@ function fromPost(post: Post): PostFormValue {
     url: post.url ?? "",
     ogp: post.ogp,
     tagsText: post.tags.join(", "),
-    imageBlobs: post.imageBlobs && post.imageBlobs.length > 0 ? post.imageBlobs : (post.imageBlob ? [post.imageBlob] : []),
+    imageBlobs: getOriginalImageBlobs(post),
   };
 }
 
@@ -165,32 +239,11 @@ export function usePosts() {
 
   // 画像URL管理
   const postImageUrlMap = useMemo(() => {
-    const urls: Record<string, string[]> = {};
+    return buildPostUrlMap(posts, getOriginalImageBlobs, postImageUrlListCache);
+  }, [posts]);
 
-    posts.forEach((post) => {
-      const blobs = post.imageBlobs && post.imageBlobs.length > 0 ? post.imageBlobs : (post.imageBlob ? [post.imageBlob] : []);
-      if (blobs.length > 0) {
-        const nextUrls = blobs.map((blob) => {
-          const cachedUrl = blobUrlCache.get(blob);
-          if (cachedUrl) return cachedUrl;
-
-          const nextUrl = URL.createObjectURL(blob);
-          blobUrlCache.set(blob, nextUrl);
-          return nextUrl;
-        });
-        const cacheKey = nextUrls.join("\n");
-        const cachedList = postImageUrlListCache.get(post.id);
-
-        if (cachedList?.key === cacheKey) {
-          urls[post.id] = cachedList.urls;
-        } else {
-          postImageUrlListCache.set(post.id, { key: cacheKey, urls: nextUrls });
-          urls[post.id] = nextUrls;
-        }
-      }
-    });
-
-    return urls;
+  const postThumbnailUrlMap = useMemo(() => {
+    return buildPostUrlMap(posts, getThumbnailImageBlobs, postThumbnailUrlListCache);
   }, [posts]);
 
   useEffect(() => {
@@ -198,13 +251,19 @@ export function usePosts() {
     const activePostIds = new Set<string>();
     posts.forEach((post) => {
       activePostIds.add(post.id);
-      const blobs = post.imageBlobs && post.imageBlobs.length > 0 ? post.imageBlobs : (post.imageBlob ? [post.imageBlob] : []);
-      blobs.forEach((blob) => activeBlobs.add(blob));
+      getOriginalImageBlobs(post).forEach((blob) => activeBlobs.add(blob));
+      getThumbnailImageBlobs(post).forEach((blob) => activeBlobs.add(blob));
     });
 
     for (const postId of postImageUrlListCache.keys()) {
       if (!activePostIds.has(postId)) {
         postImageUrlListCache.delete(postId);
+      }
+    }
+
+    for (const postId of postThumbnailUrlListCache.keys()) {
+      if (!activePostIds.has(postId)) {
+        postThumbnailUrlListCache.delete(postId);
       }
     }
 
@@ -221,6 +280,7 @@ export function usePosts() {
       blobUrlCache.forEach((url) => URL.revokeObjectURL(url));
       blobUrlCache.clear();
       postImageUrlListCache.clear();
+      postThumbnailUrlListCache.clear();
     };
   }, []);
 
@@ -228,8 +288,11 @@ export function usePosts() {
   const createPost = async (value: PostFormValue) => {
     setIsBusy(true);
     try {
+      const recordInput = toRecordInput(value);
+      const imageBlobs = recordInput.imageBlobs ?? [];
       const created = await postsRepository.create({
-        ...toRecordInput(value),
+        ...recordInput,
+        thumbnailBlobs: imageBlobs.length > 0 ? await createThumbnailBlobs(imageBlobs) : undefined,
         source: "manual",
       });
       setPosts((prev) => [created, ...prev]);
@@ -246,8 +309,25 @@ export function usePosts() {
   const updatePost = async (id: string, value: PostFormValue, source: Post["source"]) => {
     setIsBusy(true);
     try {
+      const currentPost = posts.find((post) => post.id === id);
+      const recordInput = toRecordInput(value);
+      const nextImageBlobs = recordInput.imageBlobs ?? [];
+      const shouldRefreshThumbnails = Boolean(
+        nextImageBlobs.length > 0
+        && (
+          !currentPost
+          || !currentPost.thumbnailBlobs
+          || currentPost.thumbnailBlobs.length !== nextImageBlobs.length
+          || !areBlobListsEqual(getOriginalImageBlobs(currentPost), nextImageBlobs)
+        ),
+      );
       const updated = await postsRepository.update(id, {
-        ...toRecordInput(value),
+        ...recordInput,
+        thumbnailBlobs: nextImageBlobs.length === 0
+          ? undefined
+          : shouldRefreshThumbnails
+            ? await createThumbnailBlobs(nextImageBlobs)
+            : currentPost?.thumbnailBlobs,
         source,
       });
       setPosts((prev) => prev.map((p) => (p.id === id ? updated : p)));
@@ -255,6 +335,33 @@ export function usePosts() {
       return updated;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update post");
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const updatePostStatus = async (
+    post: Post,
+    nextType: Post["type"],
+    postedFrom?: Post["postedFrom"],
+  ) => {
+    setIsBusy(true);
+    try {
+      const updated = await postsRepository.update(
+        post.id,
+        {
+          type: nextType,
+          postedFrom,
+          source: post.source,
+        },
+        { touchUpdatedAt: false },
+      );
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
+      setStatusMessage(nextType === "posted" ? "投稿済みにしました。" : "未投稿に戻しました。");
+      return updated;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update post status");
       return null;
     } finally {
       setIsBusy(false);
@@ -288,6 +395,48 @@ export function usePosts() {
     }
   };
 
+  const bulkUpdatePostTags = async (postIds: string[], tags: string[], mode: "append" | "replace") => {
+    setIsBusy(true);
+    try {
+      const normalizedTags = uniqueTags(tags);
+      const postsById = new Map(posts.map((post) => [post.id, post]));
+      const touchedPostIds = uniqueValues(postIds);
+      const updatedPosts = await Promise.all(touchedPostIds.map(async (postId) => {
+        const post = postsById.get(postId);
+        if (!post) {
+          throw new Error("Post not found");
+        }
+
+        const nextTags = mode === "append"
+          ? uniqueTags([...post.tags, ...normalizedTags])
+          : normalizedTags;
+
+        if (areStringListsEqual(post.tags, nextTags)) {
+          return post;
+        }
+
+        return postsRepository.update(
+          post.id,
+          {
+            tags: nextTags,
+            source: post.source,
+          },
+          { touchUpdatedAt: false },
+        );
+      }));
+
+      const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
+      setPosts((prev) => prev.map((post) => updatedById.get(post.id) ?? post));
+      setStatusMessage(`${updatedPosts.length}件の投稿にタグを適用しました。`);
+      return updatedPosts;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to bulk update post tags");
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return {
     posts,
     visiblePosts,
@@ -307,10 +456,13 @@ export function usePosts() {
     isBooting,
     isBusy,
     postImageUrlMap,
+    postThumbnailUrlMap,
     loadPosts,
     createPost,
     updatePost,
+    updatePostStatus,
     updatePostOgp,
+    bulkUpdatePostTags,
     deletePost,
     fromPost,
     emptyForm,

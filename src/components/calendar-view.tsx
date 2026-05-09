@@ -9,7 +9,7 @@ type CalendarFilter = "all" | "post" | "clip";
 
 type CalendarViewProps = {
   posts: Post[];
-  postImageUrlMap: Record<string, string[]>;
+  postThumbnailUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
   onPostEdit: (post: Post) => void;
   onTagClick: (tag: string) => void;
@@ -104,7 +104,7 @@ function getLatestPostDateKey(posts: Post[]) {
   return latestPost ? toDateKey(latestPost.updatedAt) : toDateKey(new Date().toISOString());
 }
 
-export function CalendarView({ posts, postImageUrlMap, onPostClick, onPostEdit, onTagClick }: CalendarViewProps) {
+export function CalendarView({ posts, postThumbnailUrlMap, onPostClick, onPostEdit, onTagClick }: CalendarViewProps) {
   const didSyncInitialPostDateRef = useRef(false);
   const [selectedDateKey, setSelectedDateKey] = useState(() => getLatestPostDateKey(posts));
   const [visibleMonth, setVisibleMonth] = useState(() => {
@@ -265,7 +265,7 @@ export function CalendarView({ posts, postImageUrlMap, onPostClick, onPostEdit, 
         ) : (
           <div className="flex flex-col gap-2">
             {selectedPosts.map((post) => {
-              const imageUrl = postImageUrlMap[post.id]?.[0];
+              const imageUrl = postThumbnailUrlMap[post.id]?.[0];
               return (
                 <article
                   key={post.id}

@@ -764,3 +764,50 @@ https://react.dev/link/hydration-mismatch
                         >
                   ...
  
+[browser] The final argument passed to useEffect changed size between renders. The order and size of this array must remain constant.
+
+Previous: [home, , (hidden)=>{
+            isTopChromeHiddenRef.current = hidden;
+            document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+        }]
+Incoming: [, home, , (hidden)=>{
+            isTopChromeHiddenRef.current = hidden;
+            document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+        }] 
+    at Home (src/app/page.tsx:186:26)
+    at Set.forEach (<anonymous>)
+  184 |     replaceHistoryState(homeState);
+  185 |     applyHistoryState(homeState);
+> 186 |   }, [applyHistoryState, replaceHistoryState]);
+      |                          ^
+  187 |
+  188 |   useEffect(() => {
+  189 |     activeViewRef.current = activeView; (src/app/page.tsx:186:26)
+[browser] The final argument passed to useEffect changed size between renders. The order and size of this array must remain constant.
+
+Previous: [home, , (hidden)=>{
+            isTopChromeHiddenRef.current = hidden;
+            document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+        }]
+Incoming: [, home, , (hidden)=>{
+            isTopChromeHiddenRef.current = hidden;
+            document.documentElement.dataset.timelineChrome = hidden ? "hidden" : "visible";
+        }] 
+    at Home (src/app/page.tsx:186:26)
+    at Set.forEach (<anonymous>)
+  184 |     replaceHistoryState(homeState);
+  185 |     applyHistoryState(homeState);
+> 186 |   }, [applyHistoryState, replaceHistoryState]);
+      |                          ^
+  187 |
+  188 |   useEffect(() => {
+  189 |     activeViewRef.current = activeView; (src/app/page.tsx:186:26)
+⚠ Found a change in next.config.ts. Restarting the server to apply the changes...
+⨯ Error: export const dynamic = "force-static"/export const revalidate not configured on route "/manifest.webmanifest" with "output: export". See more info here: https://nextjs.org/docs/advanced-features/static-html-export
+    at Object.<anonymous> (C:\Users\Chokowa\Desktop\myTools\bocchisns\.next\dev\server\app\manifest.webmanifest\route.js:6:3) {
+  page: '/manifest.webmanifest'
+}
+⨯ Error: export const dynamic = "force-static"/export const revalidate not configured on route "/manifest.webmanifest" with "output: export". See more info here: https://nextjs.org/docs/advanced-features/static-html-export
+    at Object.<anonymous> (C:\Users\Chokowa\Desktop\myTools\bocchisns\.next\dev\server\app\manifest.webmanifest\route.js:6:3) {
+  page: '/manifest.webmanifest'
+}

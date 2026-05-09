@@ -4,6 +4,7 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { Copy, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { fetchOgpPreview } from "@/lib/ogp-preview";
 import type { ImageOriginRect } from "@/types/navigation";
 import type { OgpPreview, Post, PostType } from "@/types/post";
 
@@ -142,13 +143,10 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
       }
       setOgpLoading(true);
       try {
-        const res = await fetch(`/api/ogp?url=${encodeURIComponent(post.url!)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.title || data.image) {
-            setFetchedOgp(data);
-            onOgpFetched?.(data);
-          }
+        const data = await fetchOgpPreview(post.url!);
+        if (data) {
+          setFetchedOgp(data);
+          onOgpFetched?.(data);
         }
       } catch {}
       setOgpLoading(false);

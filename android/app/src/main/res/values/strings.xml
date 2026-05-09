@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bocchi SNS</string>
+    <string name="title_activity_main">Bocchi SNS</string>
+    <string name="package_name">com.chokowa.bocchisns</string>
+    <string name="custom_url_scheme">com.chokowa.bocchisns</string>
+</resources>

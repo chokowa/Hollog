@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { usePosts } from "@/hooks/use-posts";
 import { AppHeader } from "@/components/app-header";
 import { PostFeed } from "@/components/post-feed";
@@ -10,6 +12,7 @@ import { ComposerModal } from "@/components/composer-modal";
 import { PostDetail } from "@/components/post-detail";
 import { ShareImport } from "@/components/share-import";
 import { SettingsView } from "@/components/settings-view";
+import { TagManagerView } from "@/components/tag-manager-view";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
@@ -17,7 +20,7 @@ import { validateImageFile } from "@/lib/image-validation";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { Post, PostType } from "@/types/post";
 
-type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings";
+type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings" | "tag-manager";
 type AppHistoryState = {
   bocchiSns: true;
   view: ActiveView;
@@ -43,10 +46,13 @@ export default function Home() {
     isBooting,
     isBusy,
     postImageUrlMap,
+    postThumbnailUrlMap,
     loadPosts,
     createPost,
     updatePost,
+    updatePostStatus,
     updatePostOgp,
+    bulkUpdatePostTags,
     deletePost,
     fromPost,
     emptyForm,
@@ -188,11 +194,15 @@ export default function Home() {
 
   const handleTimelineTagChange = useCallback((tag: string | null) => {
     if (activeViewRef.current === "home") {
+      if (!tag) {
+        moveToHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+        return;
+      }
       pushHistoryState({ bocchiSns: true, view: "home", activeTag: tag });
       return;
     }
     setActiveTag(tag);
-  }, [pushHistoryState, setActiveTag]);
+  }, [moveToHistoryState, pushHistoryState, setActiveTag]);
 
   const goBackOrHome = useCallback(() => {
     const currentState = window.history.state as AppHistoryState | null;
@@ -336,6 +346,39 @@ export default function Home() {
   }, [applyHistoryState, replaceHistoryState]);
 
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let isMounted = true;
+    let removeListener: (() => void) | null = null;
+
+    void CapacitorApp.addListener("backButton", () => {
+      const currentState = window.history.state as AppHistoryState | null;
+      if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.composer || currentState.imageViewer)) {
+        window.history.back();
+        return;
+      }
+
+      if (activeTagRef.current) {
+        moveToHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+        return;
+      }
+
+      void CapacitorApp.minimizeApp();
+    }).then((listener) => {
+      if (!isMounted) {
+        listener.remove();
+        return;
+      }
+      removeListener = () => listener.remove();
+    });
+
+    return () => {
+      isMounted = false;
+      removeListener?.();
+    };
+  }, [moveToHistoryState]);
+
+  useEffect(() => {
     if (isEditorOpen && selectedPost) {
       const syncTimer = setTimeout(() => {
         setComposerValue(fromPost(selectedPost));
@@ -366,7 +409,7 @@ export default function Home() {
     setIsEditorOpen(true);
     pushHistoryState({
       bocchiSns: true,
-      view: "detail",
+      view: activeViewRef.current === "detail" ? "detail" : activeViewRef.current,
       postId: post.id,
       composer: "edit",
     });
@@ -455,7 +498,7 @@ export default function Home() {
     if (!selectedPost) return;
     const nextType = selectedPost.type === "posted" ? (selectedPost.postedFrom ?? "post") : "posted";
     const postedFrom = selectedPost.type === "posted" ? selectedPost.postedFrom : selectedPost.type;
-    await updatePost(selectedPost.id, { ...fromPost(selectedPost), type: nextType, postedFrom }, selectedPost.source);
+    await updatePostStatus(selectedPost, nextType, postedFrom);
   };
 
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
@@ -561,11 +604,27 @@ export default function Home() {
       <main className="flex flex-col flex-1">
         <SettingsView
           onBack={goBackOrHome}
+          onOpenTagManager={() => pushHistoryState({ bocchiSns: true, view: "tag-manager" })}
           themeMode={themeMode}
           onThemeChange={setTheme}
           hidePostedInSourceTabs={hidePostedInSourceTabs}
           onHidePostedInSourceTabsChange={setHidePostedInSourceTabs}
           existingTags={existingTags}
+        />
+      </main>
+    );
+  }
+
+  if (activeView === "tag-manager") {
+    return (
+      <main className="flex flex-col flex-1">
+        <TagManagerView
+          onBack={goBackOrHome}
+          posts={posts}
+          isBusy={isBusy}
+          postThumbnailUrlMap={postThumbnailUrlMap}
+          existingTags={existingTags}
+          onBulkUpdatePostTags={bulkUpdatePostTags}
         />
       </main>
     );
@@ -592,6 +651,7 @@ export default function Home() {
             availableTags={availableTags}
             onTagChange={handleTimelineTagChange}
             postImageUrlMap={postImageUrlMap}
+            postThumbnailUrlMap={postThumbnailUrlMap}
             onPostClick={openPostDetail}
             onPostEdit={openEditComposer}
             onPostTypeChange={handlePostTypeChange}
@@ -621,7 +681,7 @@ export default function Home() {
       {activeView === "calendar" && (
         <CalendarView
           posts={posts}
-          postImageUrlMap={postImageUrlMap}
+          postThumbnailUrlMap={postThumbnailUrlMap}
           onPostClick={openPostDetail}
           onPostEdit={openEditComposer}
           onTagClick={(tag) => {

@@ -5,7 +5,7 @@ import type { PostsRepository } from "@/lib/postsRepository";
 import type { Post } from "@/types/post";
 
 const DB_NAME = "bocchisns-local-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const POSTS_STORE_NAME = "posts";
 const META_STORE_NAME = "meta";
 const SEEDED_KEY = "sample-seeded";
@@ -28,6 +28,7 @@ type LegacyPost = Partial<Post> & {
   type?: "draft" | "saved" | "post" | "clip" | "posted";
   source?: Post["source"];
   imageBlobs?: Blob[];
+  thumbnailBlobs?: Blob[];
   postedFrom?: Post["postedFrom"];
 };
 
@@ -59,6 +60,10 @@ function getDatabase() {
         if (oldVersion < 2) {
           transaction.objectStore(META_STORE_NAME).put(true, SEEDED_KEY);
         }
+
+        if (oldVersion < 3) {
+          transaction.objectStore(META_STORE_NAME).put(true, SEEDED_KEY);
+        }
       },
     });
   }
@@ -85,6 +90,7 @@ function normalizePost(rawPost: LegacyPost): Post {
     ogp: rawPost.ogp,
     imageBlob: rawPost.imageBlob,
     imageBlobs: Array.isArray(rawPost.imageBlobs) ? rawPost.imageBlobs : (rawPost.imageBlob ? [rawPost.imageBlob] : []),
+    thumbnailBlobs: Array.isArray(rawPost.thumbnailBlobs) ? rawPost.thumbnailBlobs : undefined,
     tags: Array.isArray(rawPost.tags) ? rawPost.tags : [],
     source: rawPost.source ?? "manual",
     createdAt: rawPost.createdAt ?? new Date().toISOString(),
@@ -141,7 +147,7 @@ export const localPostsRepository: PostsRepository = {
     return post;
   },
 
-  async update(id, input) {
+  async update(id, input, options) {
     const database = await ensureSeedData();
     const current = await database.get(POSTS_STORE_NAME, id);
 
@@ -149,10 +155,13 @@ export const localPostsRepository: PostsRepository = {
       throw new Error("Post not found");
     }
 
+    const normalizedCurrent = normalizePost(current as LegacyPost);
     const nextPost: Post = {
-      ...normalizePost(current as LegacyPost),
+      ...normalizedCurrent,
       ...input,
-      updatedAt: new Date().toISOString(),
+      updatedAt: options?.touchUpdatedAt === false
+        ? normalizedCurrent.updatedAt
+        : new Date().toISOString(),
     };
 
     await database.put(POSTS_STORE_NAME, nextPost);
