@@ -27,7 +27,7 @@ import {
 } from "@/lib/native-media-picker";
 import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
-import type { Post, PostMediaRef, PostType } from "@/types/post";
+import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
 
 type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings" | "tag-manager";
 type AppHistoryState = {
@@ -43,6 +43,8 @@ type NativeSharePayload = {
   text?: string;
   subject?: string;
   title?: string;
+  htmlText?: string;
+  clipText?: string;
   images?: Array<{
     name?: string;
     type?: string;
@@ -55,6 +57,18 @@ type NativeSharePayload = {
     storage?: "device-reference" | "app-local-copy";
   }>;
 };
+
+const URL_PATTERN = /https?:\/\/[^\s<>"']+/;
+
+function extractSharedUrl(...values: string[]) {
+  for (const value of values) {
+    const match = value.match(URL_PATTERN);
+    if (match?.[0]) {
+      return match[0].replace(/[)、。,\].!?]+$/, "");
+    }
+  }
+  return "";
+}
 
 type SharedImagePreview = {
   id: string;
@@ -160,11 +174,12 @@ function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   const text = payload.text?.trim() ?? "";
   const subject = payload.subject?.trim() ?? "";
   const title = payload.title?.trim() ?? "";
-  const urlMatch = text.match(/https?:\/\/[^\s]+/);
-  const url = urlMatch?.[0] ?? "";
+  const htmlText = payload.htmlText?.trim() ?? "";
+  const clipText = payload.clipText?.trim() ?? "";
+  const url = extractSharedUrl(text, subject, title, htmlText, clipText);
   const memoParts = [
     subject || title,
-    url ? text.replace(url, "").trim() : text,
+    url ? text.replace(url, "").trim() : text || clipText,
   ].filter(Boolean);
 
   const images = (payload.images ?? [])
@@ -225,6 +240,7 @@ export default function Home() {
   const activeViewRef = useRef<ActiveView>("home");
   const selectedPostIdRef = useRef<string | null>(null);
   const activeTagRef = useRef<string | null>(null);
+  const launchedFromShareRef = useRef(false);
   const lastScrollYRef = useRef(0);
   const scrollIntentStartYRef = useRef(0);
   const scrollIntentDirectionRef = useRef<"up" | "down" | null>(null);
@@ -334,6 +350,25 @@ export default function Home() {
   const resetToHome = useCallback((nextActiveTag: string | null = null) => {
     moveToHistoryState({ bocchiSns: true, view: "home", activeTag: nextActiveTag });
   }, [moveToHistoryState]);
+
+  const clearPendingShare = useCallback(() => {
+    setPendingShareImport(null);
+    setShareDraftMediaRefs([]);
+    setShareDraftThumbnailBlobs(undefined);
+  }, []);
+
+  const finishShareFlow = useCallback((returnToSource: boolean) => {
+    launchedFromShareRef.current = false;
+    clearPendingShare();
+    replaceHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+    applyHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+
+    if (Capacitor.isNativePlatform() && returnToSource) {
+      window.setTimeout(() => {
+        void CapacitorApp.minimizeApp();
+      }, 120);
+    }
+  }, [applyHistoryState, clearPendingShare, replaceHistoryState]);
 
   const resetToCalendar = useCallback(() => {
     moveToHistoryState({ bocchiSns: true, view: "calendar" });
@@ -544,6 +579,7 @@ export default function Home() {
       if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) return;
       nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
 
+      launchedFromShareRef.current = true;
       setPendingShareImport(nextShare);
       setShareDraftMediaRefs([]);
       setShareDraftThumbnailBlobs(undefined);
@@ -868,6 +904,7 @@ export default function Home() {
     url: string;
     tags: string[];
     type: PostType;
+    ogp?: OgpPreview;
     imageBlobs?: Blob[];
     mediaRefs?: PostMediaRef[];
     thumbnailBlobs?: Blob[];
@@ -876,12 +913,18 @@ export default function Home() {
       type: postData.type,
       body: postData.body,
       url: postData.url,
+      ogp: postData.url ? postData.ogp : undefined,
       tagsText: postData.tags.join(", "),
       imageBlobs: postData.imageBlobs,
       mediaRefs: postData.mediaRefs,
       thumbnailBlobs: postData.thumbnailBlobs,
     });
-    if (success) replaceToHome();
+    if (!success) return;
+    if (Capacitor.isNativePlatform() && launchedFromShareRef.current) {
+      finishShareFlow(true);
+      return;
+    }
+    replaceToHome();
   };
 
   const postViewerImages = imageViewerRoute?.kind === "post"
@@ -958,7 +1001,13 @@ export default function Home() {
       <main className="flex flex-col flex-1">
         <ShareImport
           key={`${pendingShareImport?.url ?? ""}\n${pendingShareImport?.memo ?? ""}\n${pendingShareImport?.images.map((image) => image.id).join(",") ?? ""}`}
-          onBack={goBackOrHome}
+          onBack={() => {
+            if (Capacitor.isNativePlatform() && launchedFromShareRef.current) {
+              finishShareFlow(true);
+              return;
+            }
+            goBackOrHome();
+          }}
           onImport={handleImportShare}
           isBusy={isBusy}
           initialUrl={pendingShareImport?.url ?? ""}

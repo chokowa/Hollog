@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { postsRepository } from "@/lib/postsRepository";
@@ -176,18 +176,31 @@ export function usePosts() {
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isBooting, setIsBooting] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
+  const loadPostsRequestIdRef = useRef(0);
+  const latestAppliedRequestIdRef = useRef(0);
+  const postsMutationVersionRef = useRef(0);
 
   // 投稿リストの読み込み
   const loadPosts = useCallback(async () => {
+    const requestId = ++loadPostsRequestIdRef.current;
+    const mutationVersionAtStart = postsMutationVersionRef.current;
     setError("");
     setIsBusy(true);
     try {
       const nextPosts = await postsRepository.list();
-      setPosts(nextPosts);
+      const isLatestRequest = requestId >= latestAppliedRequestIdRef.current;
+      const hasConcurrentMutation = postsMutationVersionRef.current !== mutationVersionAtStart;
+
+      if (isLatestRequest && !hasConcurrentMutation) {
+        latestAppliedRequestIdRef.current = requestId;
+        setPosts(nextPosts);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load posts");
     } finally {
-      setIsBusy(false);
+      if (requestId === loadPostsRequestIdRef.current) {
+        setIsBusy(false);
+      }
       setIsBooting(false);
     }
   }, []);
@@ -324,6 +337,7 @@ export function usePosts() {
           ?? (imageBlobs.length > 0 && mediaRefs.length === 0 ? await createThumbnailBlobs(imageBlobs) : undefined),
         source: "manual",
       });
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => [created, ...prev]);
       setStatusMessage("投稿を保存しました。");
       return created;
@@ -361,6 +375,7 @@ export function usePosts() {
             : currentPost?.thumbnailBlobs),
         source,
       });
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === id ? updated : p)));
       setStatusMessage("投稿を更新しました。");
       return updated;
@@ -388,6 +403,7 @@ export function usePosts() {
         },
         { touchUpdatedAt: false },
       );
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
       setStatusMessage(nextType === "posted" ? "投稿済みにしました。" : "未投稿に戻しました。");
       return updated;
@@ -403,6 +419,7 @@ export function usePosts() {
     if (!post.url) return null;
     try {
       const updated = await postsRepository.updateOgp(post.id, ogp);
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
       return updated;
     } catch (err) {
@@ -415,6 +432,7 @@ export function usePosts() {
     setIsBusy(true);
     try {
       await postsRepository.delete(id);
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.filter((p) => p.id !== id));
       setStatusMessage("投稿を削除しました。");
       return true;
@@ -457,6 +475,7 @@ export function usePosts() {
       }));
 
       const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((post) => updatedById.get(post.id) ?? post));
       setStatusMessage(`${updatedPosts.length}件の投稿にタグを適用しました。`);
       return updatedPosts;

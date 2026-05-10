@@ -17,7 +17,7 @@ type SystemTagRule = {
 export const SYSTEM_TAG_RULES: SystemTagRule[] = [
   { tag: "YouTube", patterns: ["youtube.com", "youtu.be"] },
   { tag: "X", patterns: ["x.com", "twitter.com"] },
-  { tag: "Amazon", patterns: ["amazon.co.jp", "amzn.to"] },
+  { tag: "Amazon", patterns: ["amazon.co.jp", "amzn.to", "amzn.asia"] },
   { tag: "Vimeo", patterns: ["vimeo.com"] },
   { tag: "TikTok", patterns: ["tiktok.com"] },
   { tag: "Instagram", patterns: ["instagram.com"] },

@@ -3,6 +3,23 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
 const OGP_API_BASE_URL = process.env.NEXT_PUBLIC_OGP_API_BASE_URL?.replace(/\/$/, "");
 const OGP_HTML_MAX_LENGTH = 512_000;
+const AMAZON_CRAWLER_HEADERS = [
+  {
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
+    "User-Agent": "Twitterbot/1.0",
+  },
+  {
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
+    "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+  },
+  {
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+  },
+] as const;
 
 type YouTubeOEmbed = {
   title?: string;
@@ -29,6 +46,14 @@ function getMetaContent(document: Document, names: string[]) {
   return "";
 }
 
+function getElementText(document: Document, selectors: string[]) {
+  for (const selector of selectors) {
+    const text = document.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 function resolveUrl(value: string, baseUrl: string) {
   if (!value) return "";
   try {
@@ -36,6 +61,91 @@ function resolveUrl(value: string, baseUrl: string) {
   } catch {
     return value;
   }
+}
+
+function isAmazonUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname === "amazon.co.jp"
+      || hostname.endsWith(".amazon.co.jp")
+      || hostname === "amzn.to"
+      || hostname === "amzn.asia";
+  } catch {
+    return false;
+  }
+}
+
+function extractAmazonDynamicImages(value: string, pageUrl: string) {
+  if (!value) return [];
+
+  try {
+    const images = JSON.parse(value) as Record<string, [number, number] | undefined>;
+    return Object.entries(images)
+      .map(([url, size]) => ({
+        url: resolveUrl(url, pageUrl),
+        area: (size?.[0] ?? 0) * (size?.[1] ?? 0),
+      }))
+      .filter((image) => image.url)
+      .sort((a, b) => b.area - a.area)
+      .map((image) => image.url);
+  } catch {
+    return [];
+  }
+}
+
+function extractAmazonAsin(value: string) {
+  const patterns = [
+    /\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})(?:[/?#]|$)/i,
+    /(?:[?&]asin=)([A-Z0-9]{10})(?:[&#]|$)/i,
+    /"asin"\s*:\s*"([A-Z0-9]{10})"/i,
+    /data-asin=["']([A-Z0-9]{10})["']/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match?.[1]) return match[1].toUpperCase();
+  }
+  return "";
+}
+
+function getAmazonAsinImageUrl(asin: string) {
+  if (!asin) return "";
+  const params = new URLSearchParams({
+    _encoding: "UTF8",
+    MarketPlace: "JP",
+    ASIN: asin,
+    ServiceVersion: "20070822",
+    ID: "AsinImage",
+    WS: "1",
+    Format: "_SL500_",
+  });
+  return `https://ws-fe.amazon-adsystem.com/widgets/q?${params.toString()}`;
+}
+
+function parseAmazonHtml(html: string, pageUrl: string): OgpPreview | null {
+  const parser = new DOMParser();
+  const document = parser.parseFromString(html, "text/html");
+  const basePreview = parseOgpHtml(html, pageUrl);
+  const title = basePreview?.title
+    || getElementText(document, ["#productTitle", "#ebooksProductTitle", "#title"])
+    || document.title.replace(/\s*\|\s*Amazon.*$/i, "").trim();
+  const description = basePreview?.description || getMetaContent(document, ["description"]);
+  const dynamicImages = Array.from(document.querySelectorAll<HTMLElement>("[data-a-dynamic-image]"))
+    .flatMap((element) => extractAmazonDynamicImages(element.getAttribute("data-a-dynamic-image") ?? "", pageUrl));
+  const directImage = [
+    basePreview?.image,
+    document.querySelector<HTMLImageElement>("#landingImage")?.getAttribute("data-old-hires"),
+    document.querySelector<HTMLImageElement>("#landingImage")?.src,
+    document.querySelector<HTMLImageElement>("#imgBlkFront")?.src,
+    document.querySelector<HTMLImageElement>("#ebooksImgBlkFront")?.src,
+    ...dynamicImages,
+    getAmazonAsinImageUrl(extractAmazonAsin(`${pageUrl}\n${html}`)),
+  ].find(Boolean);
+  const image = directImage ? resolveUrl(directImage, pageUrl) : "";
+
+  return title || image
+    ? { title, description, siteName: basePreview?.siteName || "Amazon", image }
+    : null;
 }
 
 function decodeHtml(value: string) {
@@ -175,19 +285,45 @@ async function fetchXOgp(url: string) {
 async function fetchOgpViaNativeHttp(url: string) {
   if (!Capacitor.isNativePlatform()) return null;
 
-  const response = await CapacitorHttp.get({
-    url,
-    responseType: "text",
-    headers: {
+  const isAmazon = isAmazonUrl(url);
+  const headerCandidates = isAmazon
+    ? AMAZON_CRAWLER_HEADERS
+    : [{
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "User-Agent": "Mozilla/5.0 BocchiSNS/1.0",
-    },
-  });
-  if (response.status < 200 || response.status >= 400 || typeof response.data !== "string") {
-    return null;
+      "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
+      "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+    }];
+
+  for (const headers of headerCandidates) {
+    const response = await CapacitorHttp.get({
+      url,
+      responseType: "text",
+      headers,
+    });
+    if (response.status < 200 || response.status >= 400 || typeof response.data !== "string") {
+      continue;
+    }
+
+    const pageUrl = response.url || url;
+    const html = response.data.slice(0, OGP_HTML_MAX_LENGTH);
+    const preview = isAmazonUrl(pageUrl) || isAmazon
+      ? parseAmazonHtml(html, pageUrl)
+      : parseOgpHtml(html, pageUrl);
+    if (preview?.image || (!isAmazon && preview?.title)) {
+      return preview;
+    }
   }
 
-  return parseOgpHtml(response.data.slice(0, OGP_HTML_MAX_LENGTH), response.url || url);
+  const asin = extractAmazonAsin(url);
+  if (isAmazon && asin) {
+    return {
+      title: "Amazon",
+      siteName: "Amazon",
+      image: getAmazonAsinImageUrl(asin),
+    };
+  }
+
+  return null;
 }
 
 async function fetchOgpViaApi(url: string) {

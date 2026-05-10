@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, Clipboard, ImagePlus, Images, Link2, Tags, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, Clipboard, ExternalLink, ImagePlus, Link2, Loader2, Tags, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
+import { fetchOgpPreview } from "@/lib/ogp-preview";
 import {
   getSystemTagsForUrl,
   getVisibleTagSuggestions,
@@ -11,7 +12,7 @@ import {
   readTagSuggestionCatalog,
   writeTagSuggestionCatalog,
 } from "@/lib/tag-suggestions";
-import type { PostMediaRef, PostType } from "@/types/post";
+import type { OgpPreview, PostMediaRef, PostType } from "@/types/post";
 
 type ShareImportProps = {
   onBack: () => void;
@@ -20,6 +21,7 @@ type ShareImportProps = {
     url: string;
     tags: string[];
     type: PostType;
+    ogp?: OgpPreview;
     imageBlobs?: Blob[];
     mediaRefs?: PostMediaRef[];
     thumbnailBlobs?: Blob[];
@@ -67,11 +69,16 @@ export function ShareImport({
   const [imageBlobs, setImageBlobs] = useState(initialImageBlobs);
   const [tags, setTags] = useState<string[]>(initialTags);
   const [tagInput, setTagInput] = useState("");
+  const [showSuggest, setShowSuggest] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState(readTagSuggestionCatalog);
   const [removedAutoTags, setRemovedAutoTags] = useState<string[]>([]);
   const [saveDestination, setSaveDestination] = useState<SaveDestination>("clip");
   const [isPreparingImages, setIsPreparingImages] = useState(false);
+  const [ogp, setOgp] = useState<OgpPreview | null>(null);
+  const [ogpLoading, setOgpLoading] = useState(false);
   const [brokenPreviewIds, setBrokenPreviewIds] = useState<Set<string>>(() => new Set());
+  const ogpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFetchedUrl = useRef("");
 
   const filteredSuggestions = getVisibleTagSuggestions(tagSuggestions, tagInput, tags).slice(0, 6);
   const blobPreviewItems = useMemo(
@@ -98,6 +105,46 @@ export function ShareImport({
   ];
   const hasImages = sharedImagePreviews.length > 0 || imageBlobs.length > 0 || additionalMediaRefs.length > 0;
   const isSaving = Boolean(isBusy || isPreparingImages);
+
+  const fetchOgp = useCallback(async (targetUrl: string) => {
+    if (!targetUrl || lastFetchedUrl.current === targetUrl) return;
+    try {
+      new URL(targetUrl);
+    } catch {
+      setOgp(null);
+      lastFetchedUrl.current = "";
+      return;
+    }
+
+    lastFetchedUrl.current = targetUrl;
+    setOgpLoading(true);
+    try {
+      setOgp(await fetchOgpPreview(targetUrl));
+    } catch {
+      setOgp(null);
+    } finally {
+      setOgpLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (ogpTimerRef.current) clearTimeout(ogpTimerRef.current);
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      const syncTimer = setTimeout(() => {
+        setOgp(null);
+        lastFetchedUrl.current = "";
+      }, 0);
+      return () => clearTimeout(syncTimer);
+    }
+
+    ogpTimerRef.current = setTimeout(() => {
+      fetchOgp(trimmedUrl);
+    }, 800);
+    return () => {
+      if (ogpTimerRef.current) clearTimeout(ogpTimerRef.current);
+    };
+  }, [fetchOgp, url]);
 
   useEffect(() => {
     return () => blobPreviewItems.forEach((item) => URL.revokeObjectURL(item.previewUrl));
@@ -130,6 +177,7 @@ export function ShareImport({
 
     setTags((current) => [...current, tag]);
     setTagInput("");
+    setShowSuggest(false);
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
@@ -199,6 +247,7 @@ export function ShareImport({
       url: url.trim(),
       tags,
       type: saveDestination,
+      ogp: url.trim() ? ogp ?? undefined : undefined,
       imageBlobs: preparedImageBlobs,
       mediaRefs,
       thumbnailBlobs: preparedThumbnailBlobs,
@@ -233,46 +282,58 @@ export function ShareImport({
       </header>
 
       <div className="space-y-4 px-4 py-5">
-        {(onNativeImagesSelect || onNativeClipboardImagesSelect) && (
-          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <label className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Images size={15} />
-              画像を追加
-            </label>
-            <div className="flex gap-2">
-              {onNativeImagesSelect && (
-                <button
-                  type="button"
-                  onClick={onNativeImagesSelect}
-                  disabled={imagePreviewItems.length >= 4}
-                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-3 text-sm text-foreground transition hover:bg-muted disabled:opacity-40"
-                >
-                  <ImagePlus size={17} />
-                  端末から
-                </button>
-              )}
-              {onNativeClipboardImagesSelect && (
-                <button
-                  type="button"
-                  onClick={onNativeClipboardImagesSelect}
-                  disabled={imagePreviewItems.length >= 4}
-                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-3 text-sm text-foreground transition hover:bg-muted disabled:opacity-40"
-                >
-                  <Clipboard size={17} />
-                  クリップボード
-                </button>
-              )}
+        <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <label className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <Link2 size={15} />
+            URL
+          </label>
+          <input
+            type="url"
+            value={url}
+            onChange={(event) => applyUrl(event.target.value)}
+            placeholder="https://example.com/..."
+            className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/50"
+          />
+          {ogpLoading && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              リンクのプレビューを取得中...
             </div>
-          </section>
-        )}
+          )}
+          {ogp && (ogp.title || ogp.image) && (
+            <button
+              type="button"
+              onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+              className="mt-3 w-full overflow-hidden rounded-xl border border-border bg-muted/30 text-left shadow-sm transition-colors hover:bg-muted/50"
+            >
+              {ogp.image && (
+                <div className="aspect-video w-full overflow-hidden bg-black/5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={ogp.image} alt="" className="h-full w-full object-cover" />
+                </div>
+              )}
+              <div className="p-3">
+                {ogp.siteName && (
+                  <p className="mb-1 text-xs text-muted-foreground">{ogp.siteName}</p>
+                )}
+                {ogp.title && (
+                  <p className="line-clamp-2 text-sm font-medium text-foreground">{ogp.title}</p>
+                )}
+                {ogp.description && (
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{ogp.description}</p>
+                )}
+                <div className="mt-2 flex items-center gap-1 text-xs text-primary">
+                  <ExternalLink size={12} />
+                  <span>サイトを開く</span>
+                </div>
+              </div>
+            </button>
+          )}
+        </section>
 
-        {imagePreviewItems.length > 0 && (
-          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <label className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Images size={15} />
-              画像
-            </label>
-            <div className="grid grid-cols-2 gap-2">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          {imagePreviewItems.length > 0 && (
+            <div className="mb-3 grid grid-cols-2 gap-2">
               {imagePreviewItems.map((item) => (
                 <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl border border-border bg-black/5">
                   {brokenPreviewIds.has(item.id) ? (
@@ -319,24 +380,7 @@ export function ShareImport({
                 </div>
               ))}
             </div>
-          </section>
-        )}
-
-        <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <label className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Link2 size={15} />
-            URL
-          </label>
-          <input
-            type="url"
-            value={url}
-            onChange={(event) => applyUrl(event.target.value)}
-            placeholder="https://example.com/..."
-            className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/50"
-          />
-        </section>
-
-        <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+          )}
           <textarea
             value={memo}
             onChange={(event) => setMemo(event.target.value)}
@@ -344,33 +388,64 @@ export function ShareImport({
             className="min-h-[6.5rem] w-full resize-none bg-transparent text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
             rows={4}
           />
-        </section>
-
-        <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <label className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Tags size={15} />
-            タグ
-          </label>
-          {tags.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => handleRemoveTag(tag)}
-                  className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-sm text-primary-foreground"
-                >
-                  #{tag}
-                  <X size={13} />
-                </button>
-              ))}
+          {(onNativeImagesSelect || onNativeClipboardImagesSelect) && (
+            <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+              <div className="flex items-center gap-1">
+                {onNativeImagesSelect && (
+                  <button
+                    type="button"
+                    onClick={onNativeImagesSelect}
+                    disabled={imagePreviewItems.length >= 4}
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                    title="画像を追加"
+                    aria-label="画像を追加"
+                  >
+                    <ImagePlus size={18} />
+                  </button>
+                )}
+                {onNativeClipboardImagesSelect && (
+                  <button
+                    type="button"
+                    onClick={onNativeClipboardImagesSelect}
+                    disabled={imagePreviewItems.length >= 4}
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                    title="コピーした画像を貼り付け"
+                    aria-label="コピーした画像を貼り付け"
+                  >
+                    <Clipboard size={18} />
+                  </button>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">{imagePreviewItems.length}/4</span>
             </div>
           )}
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary px-3 py-2">
+        </section>
+
+        <section className="relative rounded-lg border border-border bg-card px-3 py-2 shadow-sm transition-colors focus-within:border-muted-foreground">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Tags size={16} className="shrink-0 text-muted-foreground" />
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-xs font-medium text-primary"
+              >
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(tag)}
+                  className="rounded-full p-0.5 transition-colors hover:bg-primary/20"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
             <input
               type="text"
               value={tagInput}
-              onChange={(event) => setTagInput(event.target.value)}
+              onChange={(event) => {
+                setTagInput(event.target.value);
+                setShowSuggest(true);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === ",") {
                   event.preventDefault();
@@ -380,39 +455,72 @@ export function ShareImport({
                   handleRemoveTag(tags[tags.length - 1]);
                 }
               }}
-              placeholder="タグを入力"
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
+              onFocus={() => setShowSuggest(true)}
+              onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+              placeholder={tags.length === 0 ? "タグを入力..." : "さらに追加..."}
+              className="min-w-[96px] flex-1 bg-transparent text-sm outline-none"
             />
             <button
               type="button"
-              onClick={() => addTag(tagInput)}
-              disabled={!tagInput.trim()}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition active:scale-95 disabled:opacity-40"
-              aria-label="タグを追加"
+              onClick={(event) => {
+                event.preventDefault();
+                setShowSuggest(!showSuggest);
+              }}
+              className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted"
             >
-              <Check size={16} />
+              <ChevronDown size={16} className={showSuggest ? "rotate-180 transition-transform" : "transition-transform"} />
             </button>
           </div>
-          {filteredSuggestions.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {filteredSuggestions.map((tag) => (
+
+          {showSuggest && (tagInput.trim() || filteredSuggestions.length > 0) && (
+            <div className="absolute bottom-full left-0 right-0 z-20 mb-2 max-h-44 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-lg screen-scroll">
+              {tagInput.trim() && !tags.includes(tagInput.trim()) && !tagSuggestions.some((tag) => tag.name === tagInput.trim()) && (
                 <button
-                  key={tag}
                   type="button"
-                  onClick={() => addTag(tag)}
-                  className="rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    addTag(tagInput);
+                  }}
+                  className="mb-2 flex w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
                 >
-                  #{tag}
+                  <span className="flex items-center justify-center rounded-full bg-primary/20 p-1">
+                    <Tags size={12} />
+                  </span>
+                  「{tagInput}」を新規追加
                 </button>
-              ))}
+              )}
+              {filteredSuggestions.length > 0 && (
+                <div className="mb-1 px-1 text-xs font-medium text-muted-foreground">候補から選ぶ</div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {filteredSuggestions.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      addTag(tag);
+                    }}
+                    className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </section>
 
-        <section className="rounded-2xl border border-border bg-card p-2 shadow-sm">
+        <section>
+          <div className="relative grid grid-cols-2 rounded-full border border-border bg-muted p-1 shadow-inner">
+            <div
+              className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-card shadow-sm transition-transform duration-200 ${
+                saveDestination === "clip" ? "translate-x-full" : "translate-x-0"
+              }`}
+            />
           {([
-            { value: "clip" as const, label: "クリップ", description: "後で読むURLや情報を保存" },
-            { value: "post" as const, label: "ポスト", description: "SNSでシェアする予定のもの" },
+            { value: "post" as const, label: "ポスト" },
+            { value: "clip" as const, label: "クリップ" },
           ]).map((option) => {
             const selected = saveDestination === option.value;
             return (
@@ -420,22 +528,17 @@ export function ShareImport({
                 key={option.value}
                 type="button"
                 onClick={() => setSaveDestination(option.value)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
-                  selected ? "bg-primary/10" : "hover:bg-muted/40"
+                className={`relative z-10 rounded-full px-3 py-2 text-sm font-medium transition active:scale-[0.98] ${
+                  selected
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
-                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                  selected ? "border-primary bg-primary" : "border-border"
-                }`}>
-                  {selected && <span className="h-2 w-2 rounded-full bg-primary-foreground" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-foreground">{option.label}</span>
-                  <span className="block text-xs text-muted-foreground">{option.description}</span>
-                </span>
+                {option.label}
               </button>
             );
           })}
+          </div>
         </section>
       </div>
     </div>

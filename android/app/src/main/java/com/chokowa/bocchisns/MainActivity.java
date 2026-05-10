@@ -23,11 +23,13 @@ import java.io.InputStream;
 import java.util.ArrayList;
 
 public class MainActivity extends BridgeActivity {
+    private boolean initialShareIntentPending = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(BocchiMediaPlugin.class);
+        initialShareIntentPending = isShareIntent(getIntent());
         super.onCreate(savedInstanceState);
-        dispatchShareIntent(getIntent());
     }
 
     @Override
@@ -44,15 +46,22 @@ public class MainActivity extends BridgeActivity {
 
         String action = intent.getAction();
         String type = intent.getType();
-        if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+        if (!isShareIntent(intent)) {
             return;
         }
 
         String text = intent.getStringExtra(Intent.EXTRA_TEXT);
         String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
         String title = intent.getStringExtra(Intent.EXTRA_TITLE);
+        String htmlText = intent.getStringExtra(Intent.EXTRA_HTML_TEXT);
+        String clipText = readTextFromClipData(intent);
+        if (isBlank(text)) {
+            text = firstNonBlank(htmlText, clipText);
+        }
         JSONArray images = readSharedImages(intent, action, type);
         if (isBlank(text) && isBlank(subject) && isBlank(title) && images.length() == 0) {
+            consumeShareIntent(intent);
+            initialShareIntentPending = false;
             return;
         }
 
@@ -61,6 +70,8 @@ public class MainActivity extends BridgeActivity {
             payload.put("text", text == null ? "" : text);
             payload.put("subject", subject == null ? "" : subject);
             payload.put("title", title == null ? "" : title);
+            payload.put("htmlText", htmlText == null ? "" : htmlText);
+            payload.put("clipText", clipText == null ? "" : clipText);
             payload.put("images", images);
         } catch (JSONException ignored) {
             return;
@@ -72,6 +83,24 @@ public class MainActivity extends BridgeActivity {
         handler.postDelayed(() -> triggerShareEvent(data), 750);
         handler.postDelayed(() -> triggerShareEvent(data), 1600);
         handler.postDelayed(() -> triggerShareEvent(data), 3200);
+        consumeShareIntent(intent);
+        initialShareIntentPending = false;
+    }
+
+    private void consumeShareIntent(Intent intent) {
+        Intent mainIntent = new Intent(Intent.ACTION_MAIN);
+        mainIntent.setPackage(getPackageName());
+        mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        setIntent(mainIntent);
+    }
+
+    private boolean isShareIntent(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+
+        String action = intent.getAction();
+        return Intent.ACTION_SEND.equals(action) || Intent.ACTION_SEND_MULTIPLE.equals(action);
     }
 
     private JSONArray readSharedImages(Intent intent, String action, String type) {
@@ -239,5 +268,29 @@ public class MainActivity extends BridgeActivity {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String readTextFromClipData(Intent intent) {
+        if (intent.getClipData() == null) return "";
+
+        StringBuilder builder = new StringBuilder();
+        int count = Math.min(intent.getClipData().getItemCount(), 8);
+        for (int index = 0; index < count; index++) {
+            CharSequence text = intent.getClipData().getItemAt(index).coerceToText(this);
+            if (text != null && !isBlank(text.toString())) {
+                if (builder.length() > 0) builder.append("\n");
+                builder.append(text);
+            }
+        }
+        return builder.toString();
     }
 }
