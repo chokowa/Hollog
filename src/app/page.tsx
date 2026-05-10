@@ -18,7 +18,13 @@ import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { validateImageFile } from "@/lib/image-validation";
-import { pickNativeImages, saveNativeImages, type NativeSaveMediaItem } from "@/lib/native-media-picker";
+import {
+  pickNativeImages,
+  readNativeClipboardImages,
+  saveNativeImages,
+  type NativePickedMedia,
+  type NativeSaveMediaItem,
+} from "@/lib/native-media-picker";
 import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { Post, PostMediaRef, PostType } from "@/types/post";
@@ -132,6 +138,24 @@ function sharedImageToPreview(image: NonNullable<NativeSharePayload["images"]>[n
   return null;
 }
 
+function nativeMediaToRefs(items: NativePickedMedia[], prefix: string): PostMediaRef[] {
+  return items.map((item, index) => ({
+    id: item.id || `${prefix}-media-${Date.now()}-${index + 1}`,
+    kind: item.kind || "image",
+    storage: item.storage || "device-reference",
+    uri: item.uri,
+    mimeType: item.mimeType,
+    name: item.name,
+  }));
+}
+
+async function nativePreviewBlobsToThumbnails(items: NativePickedMedia[]) {
+  const previewBlobs = items
+    .map((item) => item.previewDataUrl ? dataUrlToBlob(item.previewDataUrl, item.mimeType || "image/jpeg") : null)
+    .filter((blob): blob is Blob => Boolean(blob));
+  return previewBlobs.length > 0 ? await createThumbnailBlobs(previewBlobs) : undefined;
+}
+
 function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   const text = payload.text?.trim() ?? "";
   const subject = payload.subject?.trim() ?? "";
@@ -194,6 +218,8 @@ export default function Home() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [systemTaggingEnabled, setSystemTaggingEnabledState] = useState(readSystemTaggingEnabled);
   const [composerValue, setComposerValue] = useState(emptyForm);
+  const [shareDraftMediaRefs, setShareDraftMediaRefs] = useState<PostMediaRef[]>([]);
+  const [shareDraftThumbnailBlobs, setShareDraftThumbnailBlobs] = useState<Blob[] | undefined>();
   const [imageError, setImageError] = useState<string>("");
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
   const activeViewRef = useRef<ActiveView>("home");
@@ -519,6 +545,8 @@ export default function Home() {
       nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
 
       setPendingShareImport(nextShare);
+      setShareDraftMediaRefs([]);
+      setShareDraftThumbnailBlobs(undefined);
       pushHistoryState({ bocchiSns: true, view: "share" });
     };
 
@@ -615,6 +643,33 @@ export default function Home() {
     }
   }, []);
 
+  const addNativeItemsToComposer = useCallback(async (items: NativePickedMedia[], source: string) => {
+    if (items.length === 0) {
+      setImageError(source === "clipboard" ? "クリップボードに画像が見つかりませんでした。" : "");
+      return;
+    }
+
+    const mediaRefs = nativeMediaToRefs(items, source);
+    const thumbnailBlobs = await nativePreviewBlobsToThumbnails(items);
+
+    setImageError("");
+    setComposerValue((prev) => {
+      const nextCount = (prev.imageBlobs || []).length + (prev.mediaRefs || []).length + mediaRefs.length;
+      if (nextCount > 4) {
+        setImageError("画像は最大4枚まで選択できます。");
+        return prev;
+      }
+
+      return {
+        ...prev,
+        mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
+        thumbnailBlobs: thumbnailBlobs
+          ? [...(prev.thumbnailBlobs || []), ...thumbnailBlobs]
+          : prev.thumbnailBlobs,
+      };
+    });
+  }, []);
+
   const handleNativeImagesSelect = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -629,39 +684,88 @@ export default function Home() {
       const result = await pickNativeImages(remaining);
       if (!result.items || result.items.length === 0) return;
 
-      const mediaRefs: PostMediaRef[] = result.items.map((item, index) => ({
-        id: item.id || `picked-media-${Date.now()}-${index + 1}`,
-        kind: item.kind || "image",
-        storage: item.storage || "device-reference",
-        uri: item.uri,
-        mimeType: item.mimeType,
-        name: item.name,
-      }));
-      const previewBlobs = result.items
-        .map((item) => item.previewDataUrl ? dataUrlToBlob(item.previewDataUrl, item.mimeType || "image/jpeg") : null)
-        .filter((blob): blob is Blob => Boolean(blob));
-      const thumbnailBlobs = previewBlobs.length > 0 ? await createThumbnailBlobs(previewBlobs) : undefined;
-
-      setImageError("");
-      setComposerValue((prev) => {
-        const nextCount = (prev.imageBlobs || []).length + (prev.mediaRefs || []).length + mediaRefs.length;
-        if (nextCount > 4) {
-          setImageError("画像は最大4枚まで選択できます。");
-          return prev;
-        }
-
-        return {
-          ...prev,
-          mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
-          thumbnailBlobs: thumbnailBlobs
-            ? [...(prev.thumbnailBlobs || []), ...thumbnailBlobs]
-            : prev.thumbnailBlobs,
-        };
-      });
+      await addNativeItemsToComposer(result.items, "picked");
     } catch {
       setImageError("画像を選択できませんでした。");
     }
-  }, [composerValue.imageBlobs, composerValue.mediaRefs]);
+  }, [addNativeItemsToComposer, composerValue.imageBlobs, composerValue.mediaRefs]);
+
+  const handleNativeClipboardImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (composerValue.imageBlobs || []).length + (composerValue.mediaRefs || []).length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await readNativeClipboardImages(remaining);
+      await addNativeItemsToComposer(result.items ?? [], "clipboard");
+    } catch {
+      setImageError("クリップボードから画像を読み込めませんでした。");
+    }
+  }, [addNativeItemsToComposer, composerValue.imageBlobs, composerValue.mediaRefs]);
+
+  const addNativeItemsToShareDraft = useCallback(async (items: NativePickedMedia[], source: string) => {
+    if (items.length === 0) {
+      setImageError(source === "clipboard" ? "クリップボードに画像が見つかりませんでした。" : "");
+      return;
+    }
+
+    const mediaRefs = nativeMediaToRefs(items, source);
+    const thumbnailBlobs = await nativePreviewBlobsToThumbnails(items);
+
+    setImageError("");
+    setShareDraftMediaRefs((current) => {
+      const existingCount = (pendingShareImport?.images.length ?? 0) + (pendingShareImport?.imageBlobs.length ?? 0) + current.length;
+      if (existingCount + mediaRefs.length > 4) {
+        setImageError("画像は最大4枚まで選択できます。");
+        return current;
+      }
+      return [...current, ...mediaRefs];
+    });
+    if (thumbnailBlobs) {
+      setShareDraftThumbnailBlobs((current) => [...(current || []), ...thumbnailBlobs]);
+    }
+  }, [pendingShareImport?.imageBlobs, pendingShareImport?.images]);
+
+  const handleShareNativeImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (pendingShareImport?.images.length ?? 0) + (pendingShareImport?.imageBlobs.length ?? 0) + shareDraftMediaRefs.length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await pickNativeImages(remaining);
+      await addNativeItemsToShareDraft(result.items ?? [], "picked");
+    } catch {
+      setImageError("画像を選択できませんでした。");
+    }
+  }, [addNativeItemsToShareDraft, pendingShareImport?.imageBlobs, pendingShareImport?.images, shareDraftMediaRefs.length]);
+
+  const handleShareNativeClipboardImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (pendingShareImport?.images.length ?? 0) + (pendingShareImport?.imageBlobs.length ?? 0) + shareDraftMediaRefs.length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await readNativeClipboardImages(remaining);
+      await addNativeItemsToShareDraft(result.items ?? [], "clipboard");
+    } catch {
+      setImageError("クリップボードから画像を読み込めませんでした。");
+    }
+  }, [addNativeItemsToShareDraft, pendingShareImport?.imageBlobs, pendingShareImport?.images, shareDraftMediaRefs.length]);
 
   const composerPreviewUrls = useMemo(
     () => (composerValue.imageBlobs || []).map((blob) => URL.createObjectURL(blob)),
@@ -837,6 +941,7 @@ export default function Home() {
           onChange={setComposerValue}
           onImagesSelect={handleImagesSelect}
           onNativeImagesSelect={Capacitor.isNativePlatform() ? handleNativeImagesSelect : undefined}
+          onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleNativeClipboardImagesSelect : undefined}
           imageError={imageError}
           isBusy={isBusy}
           imagePreviewUrls={composerPreviewUrls}
@@ -858,9 +963,17 @@ export default function Home() {
           isBusy={isBusy}
           initialUrl={pendingShareImport?.url ?? ""}
           initialMemo={pendingShareImport?.memo ?? ""}
-          initialImagePreviews={pendingShareImport?.images ?? []}
-          initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
-        />
+        initialImagePreviews={pendingShareImport?.images ?? []}
+        initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
+        additionalMediaRefs={shareDraftMediaRefs}
+        additionalThumbnailBlobs={shareDraftThumbnailBlobs}
+        onNativeImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeImagesSelect : undefined}
+        onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeClipboardImagesSelect : undefined}
+        onAdditionalMediaRemove={(mediaRefId) => {
+          setShareDraftMediaRefs((current) => current.filter((mediaRef) => mediaRef.id !== mediaRefId));
+          setShareDraftThumbnailBlobs(undefined);
+        }}
+      />
       </main>
     );
   }
@@ -1002,6 +1115,7 @@ export default function Home() {
         onChange={setComposerValue}
         onImagesSelect={handleImagesSelect}
         onNativeImagesSelect={Capacitor.isNativePlatform() ? handleNativeImagesSelect : undefined}
+        onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleNativeClipboardImagesSelect : undefined}
         imageError={imageError}
         isBusy={isBusy}
         imagePreviewUrls={composerPreviewUrls}

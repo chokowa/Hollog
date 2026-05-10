@@ -37,6 +37,7 @@ type PostComposerProps = {
   onChange: (nextValue: PostFormValue) => void;
   onImagesSelect: (files: File[]) => void;
   onNativeImagesSelect?: () => void;
+  onNativeClipboardImagesSelect?: () => void;
   onSubmit: () => void;
 };
 
@@ -53,6 +54,7 @@ export function PostComposer({
   onChange,
   onImagesSelect,
   onNativeImagesSelect,
+  onNativeClipboardImagesSelect,
   onSubmit,
 }: PostComposerProps) {
   const [tagInput, setTagInput] = useState("");
@@ -192,6 +194,11 @@ export function PostComposer({
   };
 
   const handleClipboardRead = async () => {
+    if (onNativeClipboardImagesSelect) {
+      onNativeClipboardImagesSelect();
+      return;
+    }
+
     if (!navigator.clipboard || !navigator.clipboard.read) {
       alert("現在の接続環境ではブラウザのセキュリティ制限によりクリップボードにアクセスできません。");
       return;

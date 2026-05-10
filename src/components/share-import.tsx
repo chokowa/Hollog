@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Images, Link2, Tags, X } from "lucide-react";
+import { Check, Clipboard, ImagePlus, Images, Link2, Tags, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import {
   getSystemTagsForUrl,
@@ -28,6 +29,11 @@ type ShareImportProps = {
   initialMemo?: string;
   initialImagePreviews?: SharedImagePreview[];
   initialImageBlobs?: Blob[];
+  additionalMediaRefs?: PostMediaRef[];
+  additionalThumbnailBlobs?: Blob[];
+  onNativeImagesSelect?: () => void;
+  onNativeClipboardImagesSelect?: () => void;
+  onAdditionalMediaRemove?: (mediaRefId: string) => void;
 };
 
 type SharedImagePreview = {
@@ -48,6 +54,11 @@ export function ShareImport({
   initialMemo = "",
   initialImagePreviews = [],
   initialImageBlobs = [],
+  additionalMediaRefs = [],
+  additionalThumbnailBlobs,
+  onNativeImagesSelect,
+  onNativeClipboardImagesSelect,
+  onAdditionalMediaRemove,
 }: ShareImportProps) {
   const initialTags = readSystemTaggingEnabled() ? getSystemTagsForUrl(initialUrl) : [];
   const [url, setUrl] = useState(initialUrl);
@@ -79,8 +90,13 @@ export function ShareImport({
       previewUrl: image.previewUrl,
     })),
     ...blobPreviewItems,
+    ...additionalMediaRefs.map((mediaRef) => ({
+      kind: "additional" as const,
+      id: mediaRef.id,
+      previewUrl: Capacitor.convertFileSrc(mediaRef.uri),
+    })),
   ];
-  const hasImages = sharedImagePreviews.length > 0 || imageBlobs.length > 0;
+  const hasImages = sharedImagePreviews.length > 0 || imageBlobs.length > 0 || additionalMediaRefs.length > 0;
   const isSaving = Boolean(isBusy || isPreparingImages);
 
   useEffect(() => {
@@ -127,9 +143,12 @@ export function ShareImport({
     setIsPreparingImages(true);
     let preparedImageBlobs = imageBlobs;
     let preparedThumbnailBlobs: Blob[] | undefined;
-    const mediaRefs = sharedImagePreviews
-      .map((image) => image.mediaRef)
-      .filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef));
+    const mediaRefs = [
+      ...sharedImagePreviews
+        .map((image) => image.mediaRef)
+        .filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef)),
+      ...additionalMediaRefs,
+    ];
     try {
       if (sharedImagePreviews.length > 0) {
         const readableSharedImages = await Promise.allSettled(
@@ -158,6 +177,14 @@ export function ShareImport({
     } catch {
       setIsPreparingImages(false);
       return;
+    }
+
+    preparedThumbnailBlobs = [
+      ...(preparedThumbnailBlobs ?? []),
+      ...(additionalThumbnailBlobs ?? []),
+    ];
+    if (preparedThumbnailBlobs.length === 0) {
+      preparedThumbnailBlobs = undefined;
     }
 
     const fullBody = memo.trim()
@@ -206,6 +233,39 @@ export function ShareImport({
       </header>
 
       <div className="space-y-4 px-4 py-5">
+        {(onNativeImagesSelect || onNativeClipboardImagesSelect) && (
+          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <label className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Images size={15} />
+              画像を追加
+            </label>
+            <div className="flex gap-2">
+              {onNativeImagesSelect && (
+                <button
+                  type="button"
+                  onClick={onNativeImagesSelect}
+                  disabled={imagePreviewItems.length >= 4}
+                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-3 text-sm text-foreground transition hover:bg-muted disabled:opacity-40"
+                >
+                  <ImagePlus size={17} />
+                  端末から
+                </button>
+              )}
+              {onNativeClipboardImagesSelect && (
+                <button
+                  type="button"
+                  onClick={onNativeClipboardImagesSelect}
+                  disabled={imagePreviewItems.length >= 4}
+                  className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-3 text-sm text-foreground transition hover:bg-muted disabled:opacity-40"
+                >
+                  <Clipboard size={17} />
+                  クリップボード
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
         {imagePreviewItems.length > 0 && (
           <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
             <label className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -243,6 +303,10 @@ export function ShareImport({
                     onClick={() => {
                       if (item.kind === "shared") {
                         setSharedImagePreviews((current) => current.filter((image) => image.id !== item.id));
+                        return;
+                      }
+                      if (item.kind === "additional") {
+                        onAdditionalMediaRemove?.(item.id);
                         return;
                       }
                       setImageBlobs((current) => current.filter((_, currentIndex) => currentIndex !== item.index));

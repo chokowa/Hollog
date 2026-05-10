@@ -12,6 +12,7 @@ type ComposerModalProps = {
   onChange: (value: PostFormValue) => void;
   onImagesSelect: (files: File[]) => void;
   onNativeImagesSelect?: () => void;
+  onNativeClipboardImagesSelect?: () => void;
   imagePreviewUrls?: string[];
   mediaPreviewUrls?: string[];
   imageError?: string;
@@ -27,6 +28,7 @@ export function ComposerModal({
   onChange,
   onImagesSelect,
   onNativeImagesSelect,
+  onNativeClipboardImagesSelect,
   imagePreviewUrls,
   mediaPreviewUrls,
   imageError,
@@ -101,6 +103,7 @@ export function ComposerModal({
             onChange={onChange}
             onImagesSelect={onImagesSelect}
             onNativeImagesSelect={onNativeImagesSelect}
+            onNativeClipboardImagesSelect={onNativeClipboardImagesSelect}
             onSubmit={onSubmit}
             autoTagUrls={autoTagUrls}
           />
