@@ -25,6 +25,7 @@ import {
   type NativePickedMedia,
   type NativeSaveMediaItem,
 } from "@/lib/native-media-picker";
+import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
@@ -669,12 +670,27 @@ export default function Home() {
     if (!currentError && validFiles.length > 0) {
       setComposerValue((prev) => {
         const existingBlobs = prev.imageBlobs || [];
+        const existingBlobIds = normalizeImageBlobIds(existingBlobs, prev.imageBlobIds) || [];
         const nextBlobs = [...existingBlobs, ...validFiles];
         if (nextBlobs.length > 4) {
           setImageError("画像は最大4枚まで選択できます。");
           return prev;
         }
-        return { ...prev, imageBlobs: nextBlobs };
+        const nextImageBlobIds = [...existingBlobIds, ...validFiles.map(() => createImageBlobId())];
+        return {
+          ...prev,
+          imageBlobs: nextBlobs,
+          imageBlobIds: nextImageBlobIds,
+          mediaOrder: normalizeMediaOrder({
+            imageBlobs: nextBlobs,
+            imageBlobIds: nextImageBlobIds,
+            mediaRefs: prev.mediaRefs,
+            mediaOrder: [
+              ...(prev.mediaOrder ?? normalizeMediaOrder(prev) ?? []),
+              ...nextImageBlobIds.slice(existingBlobIds.length).map((id) => ({ source: "imageBlob" as const, id })),
+            ],
+          }),
+        };
       });
     }
   }, []);
@@ -690,6 +706,8 @@ export default function Home() {
 
     setImageError("");
     setComposerValue((prev) => {
+      const nextImageBlobIds = normalizeImageBlobIds(prev.imageBlobs, prev.imageBlobIds);
+      const existingOrder = prev.mediaOrder ?? normalizeMediaOrder(prev) ?? [];
       const nextCount = (prev.imageBlobs || []).length + (prev.mediaRefs || []).length + mediaRefs.length;
       if (nextCount > 4) {
         setImageError("画像は最大4枚まで選択できます。");
@@ -699,6 +717,16 @@ export default function Home() {
       return {
         ...prev,
         mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
+        imageBlobIds: nextImageBlobIds,
+        mediaOrder: normalizeMediaOrder({
+          imageBlobs: prev.imageBlobs,
+          imageBlobIds: nextImageBlobIds,
+          mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
+          mediaOrder: [
+            ...existingOrder,
+            ...mediaRefs.map((mediaRef) => ({ source: "mediaRef" as const, id: mediaRef.id })),
+          ],
+        }),
         thumbnailBlobs: thumbnailBlobs
           ? [...(prev.thumbnailBlobs || []), ...thumbnailBlobs]
           : prev.thumbnailBlobs,
@@ -972,6 +1000,8 @@ export default function Home() {
         <ComposerModal
           isOpen={isComposerOpen}
           onClose={closeComposer}
+          title={isEditorOpen ? "投稿を編集" : "新しい投稿"}
+          submitLabel="保存する"
           onSubmit={async () => {
             if (isEditorOpen && selectedPost) {
               const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
@@ -1152,6 +1182,8 @@ export default function Home() {
       <ComposerModal
         isOpen={isComposerOpen}
         onClose={closeComposer}
+        title={isEditorOpen ? "投稿を編集" : "新しい投稿"}
+        submitLabel="保存する"
         onSubmit={async () => {
           if (isEditorOpen && selectedPost) {
             const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);

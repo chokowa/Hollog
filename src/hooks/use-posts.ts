@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
+import { normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { postsRepository } from "@/lib/postsRepository";
 import { uniqueTags } from "@/lib/tag-suggestions";
-import type { OgpPreview, Post, PostMediaRef, PostRecordInput, TimelineFilter } from "@/types/post";
+import type { OgpPreview, Post, PostMediaOrderItem, PostMediaRef, PostRecordInput, TimelineFilter } from "@/types/post";
 
 const HIDE_POSTED_IN_SOURCE_TABS_KEY = "bocchisns_hide_posted_in_source_tabs";
 const POST_SYNC_EVENT_KEY = "bocchisns_post_sync_event";
@@ -20,7 +21,9 @@ export type PostFormValue = {
   ogp?: OgpPreview;
   tagsText: string;
   imageBlobs?: Blob[];
+  imageBlobIds?: string[];
   mediaRefs?: PostMediaRef[];
+  mediaOrder?: PostMediaOrderItem[];
   thumbnailBlobs?: Blob[];
 };
 
@@ -52,6 +55,14 @@ const postImageUrlListCache = new Map<string, { key: string; urls: string[] }>()
 const postThumbnailUrlListCache = new Map<string, { key: string; urls: string[] }>();
 
 function toRecordInput(value: PostFormValue): PostRecordInput {
+  const imageBlobIds = normalizeImageBlobIds(value.imageBlobs, value.imageBlobIds);
+  const mediaOrder = normalizeMediaOrder({
+    imageBlobs: value.imageBlobs,
+    imageBlobIds,
+    mediaRefs: value.mediaRefs,
+    mediaOrder: value.mediaOrder,
+  });
+
   return {
     type: value.type,
     postedFrom: value.postedFrom,
@@ -59,7 +70,9 @@ function toRecordInput(value: PostFormValue): PostRecordInput {
     url: value.url.trim() || undefined,
     ogp: value.url.trim() ? value.ogp : undefined,
     imageBlobs: value.imageBlobs,
+    imageBlobIds,
     mediaRefs: value.mediaRefs,
+    mediaOrder,
     thumbnailBlobs: value.thumbnailBlobs,
     tags: value.tagsText
       .split(",")
@@ -74,6 +87,19 @@ function getOriginalImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob">) {
 
 function getMediaRefs(post: Pick<Post, "mediaRefs">) {
   return post.mediaRefs ?? [];
+}
+
+function getImageBlobIds(post: Pick<Post, "imageBlobs" | "imageBlob" | "imageBlobIds">) {
+  return normalizeImageBlobIds(getOriginalImageBlobs(post), post.imageBlobIds) ?? [];
+}
+
+function getMediaOrder(post: Pick<Post, "imageBlobs" | "imageBlob" | "imageBlobIds" | "mediaRefs" | "mediaOrder">) {
+  return normalizeMediaOrder({
+    imageBlobs: getOriginalImageBlobs(post),
+    imageBlobIds: getImageBlobIds(post),
+    mediaRefs: getMediaRefs(post),
+    mediaOrder: post.mediaOrder,
+  }) ?? [];
 }
 
 function getMediaCount(post: Pick<Post, "imageBlobs" | "imageBlob" | "mediaRefs">) {
@@ -131,8 +157,8 @@ function buildPostUrlMap(
   posts.forEach((post) => {
     const blobs = getBlobs(post);
     const shouldIncludeRefs = typeof includeMediaRefs === "function" ? includeMediaRefs(post) : includeMediaRefs;
-    const refUrls = shouldIncludeRefs ? getMediaRefs(post).map(mediaRefToUrl) : [];
-    if (blobs.length === 0 && refUrls.length === 0) {
+    const mediaRefs = getMediaRefs(post);
+    if (blobs.length === 0 && (!shouldIncludeRefs || mediaRefs.length === 0)) {
       return;
     }
 
@@ -144,7 +170,23 @@ function buildPostUrlMap(
       blobUrlCache.set(blob, nextUrl);
       return nextUrl;
     });
-    const allUrls = [...nextUrls, ...refUrls];
+    const blobIdList = getBlobs === getThumbnailImageBlobs && hasCompleteThumbnailSet(post) && mediaRefs.length === 0
+      ? getImageBlobIds(post)
+      : getImageBlobIds(post);
+    const blobUrlMap = new Map(blobIdList.map((id, index) => [id, nextUrls[index]]));
+    const refUrlMap = new Map(mediaRefs.map((mediaRef) => [mediaRef.id, mediaRefToUrl(mediaRef)]));
+    const orderedUrls = getMediaOrder(post).flatMap((item) => {
+      if (item.source === "imageBlob") {
+        const url = blobUrlMap.get(item.id);
+        return url ? [url] : [];
+      }
+      if (!shouldIncludeRefs) {
+        return [];
+      }
+      const url = refUrlMap.get(item.id);
+      return url ? [url] : [];
+    });
+    const allUrls = orderedUrls.length > 0 ? orderedUrls : [...nextUrls, ...(shouldIncludeRefs ? mediaRefs.map(mediaRefToUrl) : [])];
     const cacheKey = allUrls.join("\n");
     const cachedList = listCache.get(post.id);
 
@@ -168,7 +210,9 @@ function fromPost(post: Post): PostFormValue {
     ogp: post.ogp,
     tagsText: post.tags.join(", "),
     imageBlobs: getOriginalImageBlobs(post),
+    imageBlobIds: getImageBlobIds(post),
     mediaRefs: getMediaRefs(post),
+    mediaOrder: getMediaOrder(post),
     thumbnailBlobs: post.thumbnailBlobs,
   };
 }

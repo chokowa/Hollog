@@ -8,6 +8,8 @@ type ComposerModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: () => void;
+  title: string;
+  submitLabel?: string;
   value: PostFormValue;
   onChange: (value: PostFormValue) => void;
   onImagesSelect: (files: File[]) => void;
@@ -24,6 +26,8 @@ export function ComposerModal({
   isOpen,
   onClose,
   onSubmit,
+  title,
+  submitLabel = "保存する",
   value,
   onChange,
   onImagesSelect,
@@ -93,7 +97,8 @@ export function ComposerModal({
       <div className={`relative mt-2 w-full max-w-md overflow-hidden rounded-[28px] bg-card shadow-2xl ${isClosing ? "composer-sheet-out" : "composer-sheet-in"}`}>
         <div className="max-h-[calc(100vh-1rem)] overflow-y-auto screen-scroll">
           <PostComposer
-            submitLabel="保存する"
+            title={title}
+            submitLabel={submitLabel}
             value={value}
             imagePreviewUrls={imagePreviewUrls}
             mediaPreviewUrls={mediaPreviewUrls}
