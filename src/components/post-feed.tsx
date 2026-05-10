@@ -470,12 +470,12 @@ export function PostFeed({
   }, [hasMoreItems, showMoreItems, totalItemCount, visibleItemCount]);
 
   return (
-    <div className="flex flex-col gap-4 pb-28">
+    <div className="flex flex-col gap-3 pb-28">
       <div
         className="timeline-top-chrome sticky top-0 z-20 transform-gpu bg-background will-change-transform transition-transform duration-[260ms] ease-out"
       >
         {header}
-        <div className="px-4 py-2">
+        <div className="px-3 py-2 sm:px-4">
           <TabSwitcher
             tabs={timelineTabs}
             value={activeTab}
@@ -540,7 +540,7 @@ export function PostFeed({
         </div>
       </div>
 
-      <div className="px-4">
+      <div className="px-2 sm:px-3">
         {isBooting ? (
           <div className="flex items-center justify-center py-10 text-sm text-[var(--muted)]">
             読み込み中...
@@ -598,17 +598,17 @@ export function PostFeed({
           <div
             key={listAnimationKey}
             ref={postsContainerRef}
-            className="timeline-list-swap relative flex flex-col gap-6 pl-6"
+            className="timeline-list-swap relative flex flex-col gap-5 pl-4 sm:pl-5"
           >
-            <div className="pointer-events-none absolute bottom-0 left-[7px] top-3 w-px bg-border" />
+            <div className="pointer-events-none absolute bottom-0 left-[5px] top-3 w-px bg-border" />
             {groupedVisiblePosts.map((group) => (
               <section
                 key={group.dateKey}
                 className="timeline-date-section relative"
                 aria-labelledby={`timeline-date-${group.dateKey}`}
               >
-                <div className="mb-3 flex items-center gap-3">
-                  <span className="absolute left-[-23px] top-[7px] z-10 h-3 w-3 rounded-full border-2 border-background bg-muted-foreground shadow-[0_0_0_1px_var(--border)]" />
+                <div className="mb-2.5 flex items-center gap-3">
+                  <span className="absolute left-[-15px] top-[7px] z-10 h-3 w-3 rounded-full border-2 border-background bg-muted-foreground shadow-[0_0_0_1px_var(--border)]" />
                   <h2
                     id={`timeline-date-${group.dateKey}`}
                     className="min-w-0 flex-1 text-sm font-semibold text-foreground"

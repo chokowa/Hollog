@@ -70,6 +70,17 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
+  const timelineMediaBleedClass = "-mx-4 -mt-4 mb-3";
+  const timelineMediaCornerClass = "rounded-t-[28px]";
+  const cardSurfaceClass = isDetail
+    ? "post-card-surface cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-muted-foreground/30 hover:shadow-md active:scale-[0.997]"
+    : "post-card-surface cursor-pointer overflow-hidden rounded-[28px] border border-border/80 bg-card px-4 pb-3 pt-4 shadow-[0_1px_0_rgba(255,255,255,0.03)] transition hover:border-muted-foreground/25 hover:bg-card/95";
+  const compactUrlButtonClass = isDetail
+    ? "w-full rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
+    : "w-full rounded-2xl border border-border/80 bg-muted/35 px-3 py-2.5 text-left transition-colors hover:bg-muted/55";
+  const compactOgpCardClass = isDetail
+    ? "mt-2 w-full rounded-lg border border-border bg-muted/30 overflow-hidden shadow-sm transition-colors hover:bg-muted/50 text-left"
+    : "mt-2 w-full overflow-hidden rounded-[22px] border border-border/80 bg-muted/25 text-left transition-colors hover:bg-muted/45";
 
   useEffect(() => {
     if (isDetail || shouldLoadImages || !imageUrls || imageUrls.length === 0) return;
@@ -256,7 +267,9 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     const count = imageUrls.length;
     if (!shouldLoadImages) {
-      return <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] rounded-t-xl border-b border-border bg-black/5" />;
+      return isDetail
+        ? <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] rounded-t-xl border-b border-border bg-black/5" />
+        : <div data-card-media className={`${timelineMediaBleedClass} aspect-[4/3] ${timelineMediaCornerClass} bg-black/5`} />;
     }
 
     if (isDetail) {
@@ -284,7 +297,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count === 1) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} aspect-[4/3] overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {brokenImageUrls.has(imageUrls[0]) ? renderBrokenImage("h-full w-full") : (
             <img
               src={imageUrls[0]}
@@ -302,7 +320,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count === 2) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {imageUrls.map((url, i) => (
             brokenImageUrls.has(url)
               ? <div key={i}>{renderBrokenImage("h-full w-full")}</div>
@@ -314,7 +337,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count === 3) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {brokenImageUrls.has(imageUrls[0])
             ? renderBrokenImage("h-full w-full")
             : <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 0)} onError={() => markImageBroken(imageUrls[0])} />}
@@ -331,7 +359,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count >= 4) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {imageUrls.slice(0, 4).map((url, i) => (
             brokenImageUrls.has(url)
               ? <div key={url}>{renderBrokenImage("h-full w-full")}</div>
@@ -349,24 +382,24 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
       <article
         ref={articleRef}
         onClick={onClick}
-        className="post-card-surface cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-muted-foreground/30 hover:shadow-md active:scale-[0.997]"
+        className={cardSurfaceClass}
       >
         {post.url && (
-          <div className="mb-4">
+          <div className={isDetail ? "mb-4" : "mb-3"}>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 window.open(post.url, "_blank", "noopener,noreferrer");
               }}
-              className="w-full rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
+              className={compactUrlButtonClass}
             >
               <div className="flex items-start gap-2">
-                <LinkIcon size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+                <LinkIcon size={isDetail ? 16 : 15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs text-primary">{post.url}</div>
+                  <div className={`${isDetail ? "text-xs" : "text-[13px]"} truncate text-primary`}>{post.url}</div>
                 </div>
-                <ExternalLink size={14} className="flex-shrink-0 text-muted-foreground mt-0.5" />
+                <ExternalLink size={isDetail ? 14 : 13} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
               </div>
             </button>
 
@@ -383,14 +416,14 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
                   e.stopPropagation();
                   window.open(post.url, "_blank", "noopener,noreferrer");
                 }}
-                className="mt-2 w-full rounded-lg border border-border bg-muted/30 overflow-hidden shadow-sm transition-colors hover:bg-muted/50 text-left"
+                className={compactOgpCardClass}
               >
                 {ogp.image && (
                   <div className="aspect-video w-full overflow-hidden bg-black/5">
                     <img src={ogp.image} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </div>
                 )}
-                <div className="p-3">
+                <div className={isDetail ? "p-3" : "px-3 py-2.5"}>
                   {ogp.siteName && (
                     <p className="text-xs text-muted-foreground mb-1">{ogp.siteName}</p>
                   )}
@@ -408,13 +441,13 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
         {renderImages()}
 
-        <p className="mb-4 whitespace-pre-wrap break-words leading-relaxed text-foreground">
+        <p className={`${isDetail ? "mb-4" : "mb-3 text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
           {renderBodyWithLinks(post.body)}
         </p>
 
-        <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+        <div className={`flex items-center justify-between gap-3 border-t border-border ${isDetail ? "pt-3" : "pt-2.5"}`}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <time className="shrink-0 text-sm text-muted-foreground">
+            <time className={`shrink-0 text-muted-foreground ${isDetail ? "text-sm" : "text-[15px]"}`}>
               {formatTime(post.updatedAt)}
             </time>
             {post.tags && post.tags.length > 0 && (
@@ -427,7 +460,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
                       e.stopPropagation();
                       onTagClick?.(tag);
                     }}
-                    className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className={`shrink-0 rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isDetail ? "px-2.5 py-1 text-xs" : "px-2.5 py-1 text-[11px]"}`}
                     title={`#${tag}で絞り込み`}
                   >
                     #{tag}
