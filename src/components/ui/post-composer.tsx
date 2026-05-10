@@ -42,7 +42,7 @@ type PostComposerProps = {
   onImagesSelect: (files: File[]) => void;
   onNativeImagesSelect?: () => void;
   onNativeClipboardImagesSelect?: () => void;
-  onSubmit: () => void;
+  onSubmit: (pendingTag?: string) => void;
 };
 
 export function PostComposer({
@@ -168,6 +168,12 @@ export function PostComposer({
     });
   }, [normalizedImageBlobIds, normalizedMediaOrder, previewImageList, previewMediaList, value.mediaRefs]);
 
+  const getPendingTag = () => {
+    const trimmed = tagInput.trim().replace(/^#/, "");
+    if (!trimmed || currentTags.includes(trimmed)) return "";
+    return trimmed;
+  };
+
   useEffect(() => {
     if (!autoTagUrls || !readSystemTaggingEnabled()) return;
 
@@ -200,6 +206,13 @@ export function PostComposer({
     setShowSuggest(false);
   };
 
+  const commitPendingTag = () => {
+    const pendingTag = getPendingTag();
+    if (!pendingTag) return "";
+    addTag(pendingTag);
+    return pendingTag;
+  };
+
   const removeTag = (tagToRemove: string) => {
     const nextTags = currentTags.filter(t => t !== tagToRemove).join(", ");
     if (getSystemTagsForUrl(value.url).includes(tagToRemove)) {
@@ -211,7 +224,7 @@ export function PostComposer({
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      addTag(tagInput);
+      commitPendingTag();
     } else if (e.key === "Backspace" && tagInput === "" && currentTags.length > 0) {
       removeTag(currentTags[currentTags.length - 1]);
     }
@@ -337,7 +350,14 @@ export function PostComposer({
         <div className="flex shrink-0 items-center">
           <button
             type="button"
-            onClick={onSubmit}
+            onClick={() => {
+              const pendingTag = getPendingTag();
+              if (pendingTag) {
+                onSubmit(pendingTag);
+                return;
+              }
+              onSubmit();
+            }}
             disabled={!canSubmit}
             className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
@@ -387,18 +407,14 @@ export function PostComposer({
                   );
                 })}
               </div>
-            ) : (
-              <div className="mb-4 rounded-[24px] border border-dashed border-border bg-muted/20 px-4 py-5">
-                <p className="text-sm text-muted-foreground">画像がある投稿は、ここにプレビューが並びます。</p>
-              </div>
-            )}
+            ) : null}
             <textarea
               value={value.body}
               onChange={(e) => onChange({ ...value, body: e.target.value })}
               onFocus={() => setIsBodyFocused(true)}
               onBlur={() => setIsBodyFocused(false)}
               rows={previewMediaList.length || previewImageList.length ? 5 : 7}
-              placeholder="コメントを追加"
+              placeholder="メモを追加"
               className="w-full resize-none bg-transparent text-[16px] leading-relaxed outline-none placeholder:text-muted-foreground/50"
             />
             <div className="mt-4 border-t border-border pt-4">
@@ -431,9 +447,19 @@ export function PostComposer({
                         setTagInput(e.target.value);
                         setShowSuggest(true);
                       }}
+                      onBeforeInput={(event) => {
+                        const nativeEvent = event.nativeEvent as InputEvent;
+                        if (nativeEvent.inputType === "insertLineBreak") {
+                          event.preventDefault();
+                          commitPendingTag();
+                        }
+                      }}
                       onKeyDown={handleTagKeyDown}
                       onFocus={() => setShowSuggest(true)}
-                      onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+                      onBlur={() => setTimeout(() => {
+                        commitPendingTag();
+                        setShowSuggest(false);
+                      }, 200)}
                       placeholder={currentTags.length === 0 ? "タグを入力..." : "さらに追加..."}
                       className="min-w-[120px] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                     />

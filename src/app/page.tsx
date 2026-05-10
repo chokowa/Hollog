@@ -158,6 +158,16 @@ function sharedImageToPreview(image: NonNullable<NativeSharePayload["images"]>[n
   return null;
 }
 
+function appendPendingTag(tagsText: string, pendingTag?: string) {
+  const trimmed = pendingTag?.trim().replace(/^#/, "");
+  if (!trimmed) return tagsText;
+
+  const currentTags = tagsText.split(",").map((tag) => tag.trim()).filter(Boolean);
+  if (currentTags.includes(trimmed)) return tagsText;
+
+  return [...currentTags, trimmed].join(", ");
+}
+
 function nativeMediaToRefs(items: NativePickedMedia[], prefix: string): PostMediaRef[] {
   return items.map((item, index) => ({
     id: item.id || `${prefix}-media-${Date.now()}-${index + 1}`,
@@ -871,15 +881,6 @@ export default function Home() {
     return () => composerPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [composerPreviewUrls]);
 
-  // 投稿送信ハンドラー
-  const handleSubmit = async () => {
-    const success = await createPost(composerValue);
-    if (success) {
-      setComposerValue(emptyForm);
-      replaceToHome();
-    }
-  };
-
   // 詳細画面からの操作
   const handleCopyForX = async () => {
     if (!selectedPost) return;
@@ -930,7 +931,7 @@ export default function Home() {
 
       if (items.length === 0) {
         const hasDeviceReference = post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image" && mediaRef.storage === "device-reference");
-        showToast(hasDeviceReference ? "この画像は元ファイル参照のため、すでに端末内にあります。" : "保存できる画像がありません。");
+        showToast(hasDeviceReference ? "この画像はすでに端末内にあります。" : "保存できる画像がありません。");
         return;
       }
 
@@ -1039,12 +1040,23 @@ export default function Home() {
           onClose={closeComposer}
           title={isEditorOpen ? "投稿を編集" : "新しい投稿"}
           submitLabel="保存する"
-          onSubmit={async () => {
+          onSubmit={async (pendingTag) => {
             if (isEditorOpen && selectedPost) {
-              const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
+              const success = await updatePost(
+                selectedPost.id,
+                { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) },
+                selectedPost.source,
+              );
               if (success) replaceToDetail(selectedPost.id);
             } else {
-              await handleSubmit();
+              const nextValue = pendingTag
+                ? { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) }
+                : composerValue;
+              const success = await createPost(nextValue);
+              if (success) {
+                setComposerValue(emptyForm);
+                replaceToHome();
+              }
             }
           }}
           value={composerValue}
@@ -1228,12 +1240,23 @@ export default function Home() {
         onClose={closeComposer}
         title={isEditorOpen ? "投稿を編集" : "新しい投稿"}
         submitLabel="保存する"
-        onSubmit={async () => {
+        onSubmit={async (pendingTag) => {
           if (isEditorOpen && selectedPost) {
-            const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
+            const success = await updatePost(
+              selectedPost.id,
+              { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) },
+              selectedPost.source,
+            );
             if (success) replaceToDetail(selectedPost.id);
           } else {
-            await handleSubmit();
+            const nextValue = pendingTag
+              ? { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) }
+              : composerValue;
+            const success = await createPost(nextValue);
+            if (success) {
+              setComposerValue(emptyForm);
+              replaceToHome();
+            }
           }
         }}
         value={composerValue}

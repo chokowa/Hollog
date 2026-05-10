@@ -78,7 +78,7 @@ export function PostDetail({
               className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
             >
               <Copy size={22} />
-              <span className="text-[11px] font-medium">コピー</span>
+              <span className="text-[11px] font-medium">本文コピー</span>
             </button>
             <button
               onClick={onOpenX}
@@ -118,10 +118,6 @@ export function PostDetail({
             <span className="font-medium">削除する</span>
           </button>
         </div>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          ※X投稿時は、本文・URL・タグのみが送信されます。
-        </p>
       </div>
     </div>
   );

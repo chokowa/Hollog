@@ -7,7 +7,7 @@ import { PostComposer, type PostFormValue } from "@/components/ui/post-composer"
 type ComposerModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: () => void;
+  onSubmit: (pendingTag?: string) => void;
   title: string;
   submitLabel?: string;
   value: PostFormValue;

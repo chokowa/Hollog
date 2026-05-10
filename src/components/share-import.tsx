@@ -81,6 +81,11 @@ export function ShareImport({
   const lastFetchedUrl = useRef("");
 
   const filteredSuggestions = getVisibleTagSuggestions(tagSuggestions, tagInput, tags).slice(0, 6);
+  const getPendingTag = () => {
+    const trimmed = tagInput.trim().replace(/^#/, "");
+    if (!trimmed || tags.includes(trimmed)) return "";
+    return trimmed;
+  };
   const blobPreviewItems = useMemo(
     () => imageBlobs.map((blob, index) => ({
       kind: "blob" as const,
@@ -180,6 +185,13 @@ export function ShareImport({
     setShowSuggest(false);
   };
 
+  const commitPendingTag = () => {
+    const pendingTag = getPendingTag();
+    if (!pendingTag) return "";
+    addTag(pendingTag);
+    return pendingTag;
+  };
+
   const handleRemoveTag = (tagToRemove: string) => {
     if (getSystemTagsForUrl(url).includes(tagToRemove)) {
       setRemovedAutoTags((current) => current.includes(tagToRemove) ? current : [...current, tagToRemove]);
@@ -188,6 +200,8 @@ export function ShareImport({
   };
 
   const handleSave = async () => {
+    const pendingTag = getPendingTag();
+    const nextTags = pendingTag ? [...tags, pendingTag] : tags;
     setIsPreparingImages(true);
     try {
       let preparedImageBlobs = imageBlobs;
@@ -242,7 +256,7 @@ export function ShareImport({
       await onImport({
         body: fullBody,
         url: url.trim(),
-        tags,
+        tags: nextTags,
         type: saveDestination,
         ogp: url.trim() ? ogp ?? undefined : undefined,
         imageBlobs: preparedImageBlobs,
@@ -447,17 +461,27 @@ export function ShareImport({
                 setTagInput(event.target.value);
                 setShowSuggest(true);
               }}
+              onBeforeInput={(event) => {
+                const nativeEvent = event.nativeEvent as InputEvent;
+                if (nativeEvent.inputType === "insertLineBreak") {
+                  event.preventDefault();
+                  commitPendingTag();
+                }
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === ",") {
                   event.preventDefault();
-                  addTag(tagInput);
+                  commitPendingTag();
                 }
                 if (event.key === "Backspace" && !tagInput && tags.length > 0) {
                   handleRemoveTag(tags[tags.length - 1]);
                 }
               }}
               onFocus={() => setShowSuggest(true)}
-              onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+              onBlur={() => setTimeout(() => {
+                commitPendingTag();
+                setShowSuggest(false);
+              }, 200)}
               placeholder={tags.length === 0 ? "タグを入力..." : "さらに追加..."}
               className="min-w-[96px] flex-1 bg-transparent text-sm outline-none"
             />

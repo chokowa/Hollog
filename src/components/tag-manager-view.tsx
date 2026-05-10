@@ -216,7 +216,7 @@ export function TagManagerView({
   };
 
   const handleDeleteTag = (tagToRemove: string) => {
-    if (!confirm(`タグ候補 "${tagToRemove}" を削除しますか？\n既存投稿のタグ自体は消えません。`)) {
+    if (!confirm(`タグ候補 "${tagToRemove}" を削除しますか？\n投稿についているタグは消えません。`)) {
       return;
     }
 
@@ -260,7 +260,7 @@ export function TagManagerView({
 
     const modeLabel = bulkMode === "append" ? "追加" : "置き換え";
     const confirmed = confirm(
-      `${selectedPostIds.length}件の投稿に対して、${selectedTags.length}件のタグを${modeLabel}します。\nこの操作を実行しますか？`,
+      `${selectedPostIds.length}件の投稿に対して、${selectedTags.length}件のタグを${modeLabel}します。\n適用しますか？`,
     );
     if (!confirmed) return;
 
@@ -285,7 +285,7 @@ export function TagManagerView({
           <div className="text-center">
             <h1 className="text-lg font-medium text-foreground">タグ管理</h1>
             <p className="text-xs text-muted-foreground">
-              {activeTab === "catalog" ? "候補タグを整える" : "複数投稿へまとめて適用"}
+              {activeTab === "catalog" ? "タグ候補を管理" : "複数投稿へまとめて適用"}
             </p>
           </div>
           <div className="w-16" />
@@ -565,7 +565,7 @@ export function TagManagerView({
                       onChange={(event) => setUntaggedOnly(event.target.checked)}
                       className="bocchi-checkbox h-4 w-4"
                     />
-                    <span className="text-sm text-foreground">未タグ投稿だけ表示する</span>
+                    <span className="text-sm text-foreground">未タグのみ表示</span>
                   </label>
                 </div>
 

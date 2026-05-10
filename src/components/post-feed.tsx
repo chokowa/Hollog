@@ -578,8 +578,8 @@ export function PostFeed({
                   type="button"
                   onClick={(event) => openMediaViewer(event, itemIndex)}
                   className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm transition hover:bg-black/75 active:scale-95"
-                  aria-label="画像を連続表示"
-                  title="画像を連続表示"
+                  aria-label="拡大表示"
+                  title="拡大表示"
                 >
                   <ZoomIn size={15} />
                 </button>

@@ -243,18 +243,18 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
   const getMediaStorageBadge = (index: number): { label: string; Icon: LucideIcon } => {
     const legacyImageCount = (post.imageBlobs?.length ?? 0) + (post.imageBlob ? 1 : 0);
     if (index < legacyImageCount) {
-      return { label: "旧形式保存", Icon: Database };
+      return { label: "保存済み", Icon: Database };
     }
 
     const mediaRef = post.mediaRefs?.[index - legacyImageCount];
     if (mediaRef?.storage === "device-reference") {
-      return { label: "元ファイル参照", Icon: LinkIcon };
+      return { label: "端末の画像を参照", Icon: LinkIcon };
     }
     if (mediaRef?.storage === "app-local-copy") {
       return { label: "アプリ内保存", Icon: Archive };
     }
 
-    return { label: "旧形式保存", Icon: Database };
+    return { label: "保存済み", Icon: Database };
   };
 
   const renderMediaStorageBadge = (index: number) => {
