@@ -20,6 +20,7 @@ type PostFeedProps = {
   postThumbnailUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
   onPostEdit: (post: Post) => void;
+  onPostCopy: (post: Post, copied: boolean) => void;
   onPostSaveMedia: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
@@ -258,6 +259,7 @@ export function PostFeed({
   postThumbnailUrlMap,
   onPostClick,
   onPostEdit,
+  onPostCopy,
   onPostSaveMedia,
   onPostTypeChange,
   onPostOgpFetched,
@@ -630,6 +632,7 @@ export function PostFeed({
                           post={post}
                           imageUrls={postThumbnailUrlMap[post.id]}
                           onEdit={() => onPostEdit(post)}
+                          onCopy={onPostCopy}
                           onSaveMedia={onPostSaveMedia}
                           onTagClick={handleTagChange}
                           onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
@@ -668,7 +671,7 @@ export function PostFeed({
         />
       )}
       {latestPendingPost && (
-        <div className="fixed inset-x-0 bottom-24 z-50 mx-auto flex w-full max-w-md justify-center px-4 pointer-events-none">
+        <div className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-full max-w-md justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto flex w-full items-center justify-between gap-3 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white shadow-xl">
             <span className="min-w-0 truncate">1件削除しました</span>
             <button

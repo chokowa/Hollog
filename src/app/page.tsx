@@ -26,6 +26,7 @@ import {
   type NativeSaveMediaItem,
 } from "@/lib/native-media-picker";
 import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
+import { postTypeLabels } from "@/lib/post-labels";
 import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
@@ -85,6 +86,10 @@ type PendingShareImport = {
   images: SharedImagePreview[];
   imageBlobs: Blob[];
   mediaRefs: PostMediaRef[];
+};
+
+type AppToast = {
+  message: string;
 };
 
 function dataUrlToBlob(dataUrl: string, fallbackType: string) {
@@ -237,6 +242,7 @@ export default function Home() {
   const [shareDraftMediaRefs, setShareDraftMediaRefs] = useState<PostMediaRef[]>([]);
   const [shareDraftThumbnailBlobs, setShareDraftThumbnailBlobs] = useState<Blob[] | undefined>();
   const [imageError, setImageError] = useState<string>("");
+  const [toast, setToast] = useState<AppToast | null>(null);
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
   const activeViewRef = useRef<ActiveView>("home");
   const selectedPostIdRef = useRef<string | null>(null);
@@ -248,11 +254,31 @@ export default function Home() {
   const isTopChromeHiddenRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
   const scrollChromeTimerRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
   const nativeShareDedupRef = useRef<{ key: string; receivedAt: number } | null>(null);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
+  const showToast = useCallback((message: string) => {
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    setToast({ message });
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
   const existingTags = useMemo(() => {
     const tagSet = new Set<string>();
     posts.forEach((post) => {
@@ -858,7 +884,7 @@ export default function Home() {
   const handleCopyForX = async () => {
     if (!selectedPost) return;
     const copied = await copyTextToClipboard(buildTweetText(selectedPost));
-    alert(copied ? "X投稿用テキストをコピーしました。" : "コピーできませんでした。");
+    showToast(copied ? "X投稿用テキストをコピーしました。" : "コピーできませんでした。");
   };
 
   const handleOpenX = () => {
@@ -904,19 +930,20 @@ export default function Home() {
 
       if (items.length === 0) {
         const hasDeviceReference = post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image" && mediaRef.storage === "device-reference");
-        alert(hasDeviceReference ? "この画像は元ファイル参照のため、すでに端末内にあります。" : "保存できる画像がありません。");
+        showToast(hasDeviceReference ? "この画像は元ファイル参照のため、すでに端末内にあります。" : "保存できる画像がありません。");
         return;
       }
 
       const result = await saveNativeImages(items);
-      alert(result.savedCount > 0 ? "端末に保存しました。" : "保存できませんでした。");
+      showToast(result.savedCount > 0 ? "端末に保存しました。" : "保存できませんでした。");
     } catch {
-      alert("保存できませんでした。");
+      showToast("保存できませんでした。");
     }
-  }, []);
+  }, [showToast]);
 
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
-    await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
+    const success = await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
+    showToast(success ? `${postTypeLabels[nextType]}に移動しました。` : "移動できませんでした。");
   };
 
   const handleDelete = async () => {
@@ -970,6 +997,13 @@ export default function Home() {
       onClose={closeImageViewer}
     />
   ) : null;
+  const toastElement = toast ? (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex justify-center px-4">
+      <div className="max-w-md rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-xl">
+        {toast.message}
+      </div>
+    </div>
+  ) : null;
 
   /* detail / share 画面は全画面で展開 */
   if (activeView === "detail" && selectedPost) {
@@ -980,6 +1014,9 @@ export default function Home() {
           imageUrls={postImageUrlMap[selectedPost.id]}
           onBack={goBackOrHome}
           onCopyForX={handleCopyForX}
+          onCardCopy={(_, copied) => {
+            showToast(copied ? "本文をコピーしました。" : "コピーできませんでした。");
+          }}
           onOpenX={handleOpenX}
           onMarkAsPosted={handleMarkAsPosted}
           onEdit={() => openEditComposer(selectedPost)}
@@ -1022,6 +1059,7 @@ export default function Home() {
           autoTagUrls={systemTaggingEnabled && !isEditorOpen}
         />
         {postImageViewer}
+        {toastElement}
       </main>
     );
   }
@@ -1053,6 +1091,7 @@ export default function Home() {
           setShareDraftThumbnailBlobs(undefined);
         }}
       />
+      {toastElement}
       </main>
     );
   }
@@ -1071,6 +1110,7 @@ export default function Home() {
           onSystemTaggingEnabledChange={setSystemTaggingEnabled}
           existingTags={existingTags}
         />
+        {toastElement}
       </main>
     );
   }
@@ -1086,6 +1126,7 @@ export default function Home() {
           existingTags={existingTags}
           onBulkUpdatePostTags={bulkUpdatePostTags}
         />
+        {toastElement}
       </main>
     );
   }
@@ -1114,6 +1155,9 @@ export default function Home() {
             postThumbnailUrlMap={postThumbnailUrlMap}
             onPostClick={openPostDetail}
             onPostEdit={openEditComposer}
+            onPostCopy={(_, copied) => {
+              showToast(copied ? "本文をコピーしました。" : "コピーできませんでした。");
+            }}
             onPostSaveMedia={handleSavePostMedia}
             onPostTypeChange={handlePostTypeChange}
             onPostOgpFetched={(post, ogp) => {
@@ -1204,6 +1248,7 @@ export default function Home() {
         autoTagUrls={systemTaggingEnabled && !isEditorOpen}
       />
       {postImageViewer}
+      {toastElement}
     </main>
   );
 }

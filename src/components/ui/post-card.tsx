@@ -13,6 +13,7 @@ type PostCardProps = {
   imageUrls?: string[];
   onClick?: () => void;
   onEdit?: () => void;
+  onCopy?: (post: Post, copied: boolean) => void;
   onTagClick?: (tag: string) => void;
   onTypeChange?: (nextType: PostType) => void;
   onOgpFetched?: (ogp: OgpPreview) => void;
@@ -74,7 +75,7 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
-function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTypeChange, onOgpFetched, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
+function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClick, onTypeChange, onOgpFetched, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -184,7 +185,8 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsActionMenuOpen(false);
-    await copyTextToClipboard(post.body);
+    const copied = await copyTextToClipboard(post.body);
+    onCopy?.(post, copied);
   };
 
   const handleShare = (e: React.MouseEvent) => {
@@ -570,6 +572,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 export const PostCard = memo(PostCardComponent, (prev, next) => (
   prev.post === next.post
   && prev.imageUrls === next.imageUrls
+  && prev.onCopy === next.onCopy
   && prev.onImageOpen === next.onImageOpen
   && prev.onSaveMedia === next.onSaveMedia
   && prev.isDetail === next.isDetail
