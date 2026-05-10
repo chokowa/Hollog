@@ -78,7 +78,7 @@ export function TagManagerView({
   onBulkUpdatePostTags,
 }: TagManagerViewProps) {
   const [activeTab, setActiveTab] = useState<ManagerTab>("catalog");
-  const [tagSuggestions, setTagSuggestions] = useState<string[]>(() => uniqueTags([...readTagSuggestions(), ...existingTags]));
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>(() => uniqueTags(readTagSuggestions()));
   const [newTag, setNewTag] = useState("");
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -95,8 +95,8 @@ export function TagManagerView({
   const [bulkMode, setBulkMode] = useState<BulkMode>("append");
 
   const catalogTags = useMemo(
-    () => uniqueTags([...tagSuggestions, ...existingTags]),
-    [existingTags, tagSuggestions],
+    () => uniqueTags(tagSuggestions),
+    [tagSuggestions],
   );
 
   const saveTags = (nextTags: string[]) => {
