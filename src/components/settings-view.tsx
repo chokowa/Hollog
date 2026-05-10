@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, EyeOff, Moon, Monitor, Sun, Tags } from "lucide-react";
+import { ArrowLeft, EyeOff, Moon, Monitor, Sparkles, Sun, Tags } from "lucide-react";
 import type { ThemeMode } from "@/hooks/use-theme";
 import { AppButton } from "@/components/ui/app-button";
 
@@ -11,6 +11,8 @@ type SettingsViewProps = {
   onThemeChange: (mode: ThemeMode) => void;
   hidePostedInSourceTabs: boolean;
   onHidePostedInSourceTabsChange: (hidden: boolean) => void;
+  systemTaggingEnabled: boolean;
+  onSystemTaggingEnabledChange: (enabled: boolean) => void;
   existingTags: string[];
 };
 
@@ -21,6 +23,8 @@ export function SettingsView({
   onThemeChange,
   hidePostedInSourceTabs,
   onHidePostedInSourceTabsChange,
+  systemTaggingEnabled,
+  onSystemTaggingEnabledChange,
   existingTags,
 }: SettingsViewProps) {
   return (
@@ -53,6 +57,26 @@ export function SettingsView({
             <AppButton block onClick={onOpenTagManager}>
               タグ整理を開く
             </AppButton>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+            <Sparkles size={18} className="text-primary" />
+            <h2 className="font-medium text-foreground">自動タグ</h2>
+          </div>
+          <div className="p-5">
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border p-4 transition-colors hover:bg-muted/30">
+              <span className="text-sm font-medium text-foreground">
+                URLからサービス名タグを自動で付ける
+              </span>
+              <input
+                type="checkbox"
+                checked={systemTaggingEnabled}
+                onChange={(event) => onSystemTaggingEnabledChange(event.target.checked)}
+                className="bocchi-checkbox h-5 w-5"
+              />
+            </label>
           </div>
         </section>
 

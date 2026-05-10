@@ -3,7 +3,13 @@
 import { Check, Images, Link2, Tags, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
-import { readTagSuggestions, writeTagSuggestions } from "@/lib/tag-suggestions";
+import {
+  getSystemTagsForUrl,
+  getVisibleTagSuggestions,
+  readSystemTaggingEnabled,
+  readTagSuggestionCatalog,
+  writeTagSuggestionCatalog,
+} from "@/lib/tag-suggestions";
 import type { PostMediaRef, PostType } from "@/types/post";
 
 type ShareImportProps = {
@@ -43,21 +49,20 @@ export function ShareImport({
   initialImagePreviews = [],
   initialImageBlobs = [],
 }: ShareImportProps) {
+  const initialTags = readSystemTaggingEnabled() ? getSystemTagsForUrl(initialUrl) : [];
   const [url, setUrl] = useState(initialUrl);
   const [memo, setMemo] = useState(initialMemo);
   const [sharedImagePreviews, setSharedImagePreviews] = useState(initialImagePreviews);
   const [imageBlobs, setImageBlobs] = useState(initialImageBlobs);
-  const [tags, setTags] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>(initialTags);
   const [tagInput, setTagInput] = useState("");
-  const [tagSuggestions, setTagSuggestions] = useState<string[]>(readTagSuggestions);
+  const [tagSuggestions, setTagSuggestions] = useState(readTagSuggestionCatalog);
+  const [removedAutoTags, setRemovedAutoTags] = useState<string[]>([]);
   const [saveDestination, setSaveDestination] = useState<SaveDestination>("clip");
   const [isPreparingImages, setIsPreparingImages] = useState(false);
   const [brokenPreviewIds, setBrokenPreviewIds] = useState<Set<string>>(() => new Set());
 
-  const filteredSuggestions = tagSuggestions
-    .filter((tag) => tag.toLowerCase().includes(tagInput.trim().toLowerCase()))
-    .filter((tag) => !tags.includes(tag))
-    .slice(0, 6);
+  const filteredSuggestions = getVisibleTagSuggestions(tagSuggestions, tagInput, tags).slice(0, 6);
   const blobPreviewItems = useMemo(
     () => imageBlobs.map((blob, index) => ({
       kind: "blob" as const,
@@ -82,6 +87,20 @@ export function ShareImport({
     return () => blobPreviewItems.forEach((item) => URL.revokeObjectURL(item.previewUrl));
   }, [blobPreviewItems]);
 
+  const applyUrl = (nextUrl: string) => {
+    setUrl(nextUrl);
+    if (!readSystemTaggingEnabled()) return;
+
+    const autoTags = getSystemTagsForUrl(nextUrl).filter((tag) => !removedAutoTags.includes(tag));
+    setTags((current) => {
+      const nextTags = [...current];
+      autoTags.forEach((tag) => {
+        if (!nextTags.includes(tag)) nextTags.push(tag);
+      });
+      return nextTags.length === current.length ? current : nextTags;
+    });
+  };
+
   const addTag = (value: string) => {
     const tag = value.trim().replace(/^#/, "");
     if (!tag || tags.includes(tag)) {
@@ -89,8 +108,8 @@ export function ShareImport({
       return;
     }
 
-    if (!tagSuggestions.includes(tag)) {
-      setTagSuggestions(writeTagSuggestions([...tagSuggestions, tag]));
+    if (!tagSuggestions.some((suggestion) => suggestion.name === tag)) {
+      setTagSuggestions(writeTagSuggestionCatalog([...tagSuggestions, { name: tag, isSystem: false }]));
     }
 
     setTags((current) => [...current, tag]);
@@ -98,6 +117,9 @@ export function ShareImport({
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
+    if (getSystemTagsForUrl(url).includes(tagToRemove)) {
+      setRemovedAutoTags((current) => current.includes(tagToRemove) ? current : [...current, tagToRemove]);
+    }
     setTags((current) => current.filter((tag) => tag !== tagToRemove));
   };
 
@@ -244,7 +266,7 @@ export function ShareImport({
           <input
             type="url"
             value={url}
-            onChange={(event) => setUrl(event.target.value)}
+            onChange={(event) => applyUrl(event.target.value)}
             placeholder="https://example.com/..."
             className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/50"
           />

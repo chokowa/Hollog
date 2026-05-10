@@ -19,6 +19,7 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { validateImageFile } from "@/lib/image-validation";
 import { pickNativeImages, saveNativeImages, type NativeSaveMediaItem } from "@/lib/native-media-picker";
+import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { Post, PostMediaRef, PostType } from "@/types/post";
 
@@ -191,6 +192,7 @@ export default function Home() {
   const [imageViewerOriginRect, setImageViewerOriginRect] = useState<ImageOriginRect | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [systemTaggingEnabled, setSystemTaggingEnabledState] = useState(readSystemTaggingEnabled);
   const [composerValue, setComposerValue] = useState(emptyForm);
   const [imageError, setImageError] = useState<string>("");
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
@@ -575,6 +577,10 @@ export default function Home() {
     resetToHome(null);
   }, [resetToHome]);
 
+  const setSystemTaggingEnabled = useCallback((enabled: boolean) => {
+    setSystemTaggingEnabledState(writeSystemTaggingEnabled(enabled));
+  }, []);
+
   const replaceToDetail = useCallback((postId: string) => {
     const detailState: AppHistoryState = { bocchiSns: true, view: "detail", postId };
     replaceHistoryState(detailState);
@@ -835,6 +841,7 @@ export default function Home() {
           isBusy={isBusy}
           imagePreviewUrls={composerPreviewUrls}
           mediaPreviewUrls={composerMediaPreviewUrls}
+          autoTagUrls={systemTaggingEnabled && !isEditorOpen}
         />
         {postImageViewer}
       </main>
@@ -868,6 +875,8 @@ export default function Home() {
           onThemeChange={setTheme}
           hidePostedInSourceTabs={hidePostedInSourceTabs}
           onHidePostedInSourceTabsChange={setHidePostedInSourceTabs}
+          systemTaggingEnabled={systemTaggingEnabled}
+          onSystemTaggingEnabledChange={setSystemTaggingEnabled}
           existingTags={existingTags}
         />
       </main>
@@ -997,6 +1006,7 @@ export default function Home() {
         isBusy={isBusy}
         imagePreviewUrls={composerPreviewUrls}
         mediaPreviewUrls={composerMediaPreviewUrls}
+        autoTagUrls={systemTaggingEnabled && !isEditorOpen}
       />
       {postImageViewer}
     </main>

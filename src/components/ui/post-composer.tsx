@@ -4,7 +4,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Camera, ImagePlus, Link2, Tags, X, Clipboard, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
-import { readTagSuggestions, writeTagSuggestions } from "@/lib/tag-suggestions";
+import {
+  getSystemTagsForUrl,
+  getVisibleTagSuggestions,
+  readSystemTaggingEnabled,
+  readTagSuggestionCatalog,
+  writeTagSuggestionCatalog,
+} from "@/lib/tag-suggestions";
 import type { OgpPreview, PostMediaRef, PostType } from "@/types/post";
 
 export type PostFormValue = {
@@ -26,6 +32,7 @@ type PostComposerProps = {
   imageError?: string;
   pending?: boolean;
   compact?: boolean;
+  autoTagUrls?: boolean;
   onCancel?: () => void;
   onChange: (nextValue: PostFormValue) => void;
   onImagesSelect: (files: File[]) => void;
@@ -41,6 +48,7 @@ export function PostComposer({
   imageError,
   pending = false,
   compact = false,
+  autoTagUrls = true,
   onCancel,
   onChange,
   onImagesSelect,
@@ -50,7 +58,8 @@ export function PostComposer({
   const [tagInput, setTagInput] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
   const [isBodyFocused, setIsBodyFocused] = useState(false);
-  const [tagSuggestions, setTagSuggestions] = useState<string[]>(readTagSuggestions);
+  const [tagSuggestions, setTagSuggestions] = useState(readTagSuggestionCatalog);
+  const [removedAutoTags, setRemovedAutoTags] = useState<string[]>([]);
   const [ogp, setOgp] = useState<OgpPreview | null>(value.ogp ?? null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const ogpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -115,14 +124,28 @@ export function PostComposer({
   }, [value.url, value.ogp, fetchOgp]);
 
   const currentTags = value.tagsText.split(",").map(t => t.trim()).filter(Boolean);
-  const suggests = tagSuggestions.filter(t => t.toLowerCase().includes(tagInput.toLowerCase()) && !currentTags.includes(t));
+  const suggests = getVisibleTagSuggestions(tagSuggestions, tagInput, currentTags);
+
+  useEffect(() => {
+    if (!autoTagUrls || !readSystemTaggingEnabled()) return;
+
+    const autoTags = getSystemTagsForUrl(value.url).filter((tag) => !removedAutoTags.includes(tag));
+    const nextTags = [...currentTags];
+    autoTags.forEach((tag) => {
+      if (!nextTags.includes(tag)) nextTags.push(tag);
+    });
+
+    if (nextTags.length !== currentTags.length) {
+      onChange({ ...value, tagsText: nextTags.join(", ") });
+    }
+  }, [autoTagUrls, currentTags, onChange, removedAutoTags, value]);
 
   const addTag = (newTag: string) => {
     const trimmed = newTag.trim().replace(/^#/, "");
     if (!trimmed) return;
 
-    if (!tagSuggestions.includes(trimmed)) {
-      setTagSuggestions(writeTagSuggestions([...tagSuggestions, trimmed]));
+    if (!tagSuggestions.some((tag) => tag.name === trimmed)) {
+      setTagSuggestions(writeTagSuggestionCatalog([...tagSuggestions, { name: trimmed, isSystem: false }]));
     }
 
     if (currentTags.includes(trimmed)) {
@@ -137,6 +160,9 @@ export function PostComposer({
 
   const removeTag = (tagToRemove: string) => {
     const nextTags = currentTags.filter(t => t !== tagToRemove).join(", ");
+    if (getSystemTagsForUrl(value.url).includes(tagToRemove)) {
+      setRemovedAutoTags((current) => current.includes(tagToRemove) ? current : [...current, tagToRemove]);
+    }
     onChange({ ...value, tagsText: nextTags });
   };
 
@@ -435,7 +461,7 @@ export function PostComposer({
 
               {showSuggest && (tagInput.trim() || suggests.length > 0) && (
                 <div className="absolute bottom-full left-0 right-0 z-20 mb-2 max-h-44 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-lg screen-scroll">
-                  {tagInput.trim() && !currentTags.includes(tagInput.trim()) && !tagSuggestions.includes(tagInput.trim()) && (
+                  {tagInput.trim() && !currentTags.includes(tagInput.trim()) && !tagSuggestions.some((tag) => tag.name === tagInput.trim()) && (
                     <button
                       type="button"
                       onMouseDown={(e) => {

@@ -16,6 +16,7 @@ type ComposerModalProps = {
   mediaPreviewUrls?: string[];
   imageError?: string;
   isBusy?: boolean;
+  autoTagUrls?: boolean;
 };
 
 export function ComposerModal({
@@ -30,6 +31,7 @@ export function ComposerModal({
   mediaPreviewUrls,
   imageError,
   isBusy,
+  autoTagUrls,
 }: ComposerModalProps) {
   const [isClosing, setIsClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
@@ -100,6 +102,7 @@ export function ComposerModal({
             onImagesSelect={onImagesSelect}
             onNativeImagesSelect={onNativeImagesSelect}
             onSubmit={onSubmit}
+            autoTagUrls={autoTagUrls}
           />
         </div>
       </div>

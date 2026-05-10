@@ -11,6 +11,13 @@ type YouTubeOEmbed = {
   thumbnail_url?: string;
 };
 
+type XOEmbed = {
+  author_name?: string;
+  html?: string;
+  provider_name?: string;
+  url?: string;
+};
+
 function getMetaContent(document: Document, names: string[]) {
   for (const name of names) {
     const element = document.querySelector<HTMLMetaElement>(
@@ -31,6 +38,13 @@ function resolveUrl(value: string, baseUrl: string) {
   }
 }
 
+function decodeHtml(value: string) {
+  if (!value) return "";
+  const parser = new DOMParser();
+  const document = parser.parseFromString(value, "text/html");
+  return document.documentElement.textContent?.trim() ?? value;
+}
+
 function parseOgpHtml(html: string, pageUrl: string): OgpPreview | null {
   const parser = new DOMParser();
   const document = parser.parseFromString(html, "text/html");
@@ -44,10 +58,41 @@ function parseOgpHtml(html: string, pageUrl: string): OgpPreview | null {
     : null;
 }
 
+function isXUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname === "x.com" || hostname === "twitter.com" || hostname === "mobile.twitter.com";
+  } catch {
+    return false;
+  }
+}
+
 function isYouTubeUrl(url: string) {
   try {
     const hostname = new URL(url).hostname.replace(/^www\./, "");
     return hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be";
+  } catch {
+    return false;
+  }
+}
+
+function extractLinksFromHtml(html: string) {
+  const parser = new DOMParser();
+  const document = parser.parseFromString(html, "text/html");
+  return Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))
+    .map((anchor) => anchor.href)
+    .filter(Boolean);
+}
+
+function isExternalTweetLink(url: string) {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, "");
+    if (hostname === "t.co") return true;
+    if (hostname === "pic.twitter.com") return false;
+    return hostname !== "x.com"
+      && hostname !== "twitter.com"
+      && hostname !== "mobile.twitter.com";
   } catch {
     return false;
   }
@@ -60,6 +105,16 @@ function toYouTubeOgp(data: YouTubeOEmbed): OgpPreview | null {
     description: data.author_name,
     siteName: data.provider_name || "YouTube",
     image: data.thumbnail_url,
+  };
+}
+
+function toXOgp(data: XOEmbed): OgpPreview | null {
+  const tweetText = data.html ? decodeHtml(data.html).replace(/\s+/g, " ") : "";
+  const title = tweetText || (data.author_name ? `${data.author_name} on X` : "X post");
+  return {
+    title,
+    description: data.author_name,
+    siteName: data.provider_name || "X",
   };
 }
 
@@ -79,6 +134,42 @@ async function fetchYouTubeOgp(url: string) {
   const response = await fetch(oembedUrl);
   if (!response.ok) return null;
   return toYouTubeOgp(await response.json() as YouTubeOEmbed);
+}
+
+async function fetchXOEmbed(url: string) {
+  if (!isXUrl(url)) return null;
+
+  const endpoint = `https://publish.x.com/oembed?omit_script=1&url=${encodeURIComponent(url)}`;
+  const fallbackEndpoint = `https://publish.twitter.com/oembed?omit_script=1&url=${encodeURIComponent(url)}`;
+  const fetchJson = async (requestUrl: string) => {
+    if (Capacitor.isNativePlatform()) {
+      const response = await CapacitorHttp.get({ url: requestUrl, responseType: "json" });
+      if (response.status < 200 || response.status >= 400) return null;
+      return typeof response.data === "string"
+        ? JSON.parse(response.data) as XOEmbed
+        : response.data as XOEmbed;
+    }
+
+    const response = await fetch(requestUrl);
+    if (!response.ok) return null;
+    return await response.json() as XOEmbed;
+  };
+
+  return await fetchJson(endpoint) ?? await fetchJson(fallbackEndpoint);
+}
+
+async function fetchXOgp(url: string) {
+  const data = await fetchXOEmbed(url);
+  if (!data) return null;
+
+  const externalUrl = data.html
+    ? extractLinksFromHtml(data.html).find(isExternalTweetLink)
+    : undefined;
+  const externalOgp = externalUrl
+    ? await fetchOgpViaNativeHttp(externalUrl) ?? await fetchOgpViaApi(externalUrl)
+    : null;
+
+  return externalOgp ?? toXOgp(data);
 }
 
 async function fetchOgpViaNativeHttp(url: string) {
@@ -121,6 +212,7 @@ export async function fetchOgpPreview(url: string): Promise<OgpPreview | null> {
 
   try {
     return await fetchYouTubeOgp(trimmedUrl)
+      ?? await fetchXOgp(trimmedUrl)
       ?? await fetchOgpViaNativeHttp(trimmedUrl)
       ?? await fetchOgpViaApi(trimmedUrl);
   } catch {
