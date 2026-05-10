@@ -16,7 +16,6 @@ import { TagManagerView } from "@/components/tag-manager-view";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { debugLog } from "@/lib/debug-log";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { validateImageFile } from "@/lib/image-validation";
 import {
@@ -253,20 +252,6 @@ export default function Home() {
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
-  useEffect(() => {
-    debugLog("home.posts.snapshot", {
-      activeView,
-      postsCount: posts.length,
-      visibleCount: visiblePosts.length,
-      newestId: posts[0]?.id,
-      newestVisibleId: visiblePosts[0]?.id,
-      activeTab,
-      activeTag,
-      hasSearch: Boolean(searchQuery.trim()),
-      scrollY: Math.round(window.scrollY),
-    });
-  }, [activeView, activeTab, activeTag, posts, searchQuery, visiblePosts]);
-
   const existingTags = useMemo(() => {
     const tagSet = new Set<string>();
     posts.forEach((post) => {
@@ -373,16 +358,13 @@ export default function Home() {
   }, []);
 
   const finishShareFlow = useCallback((returnToSource: boolean) => {
-    debugLog("share.finish.begin", { returnToSource, activeView: activeViewRef.current });
     launchedFromShareRef.current = false;
     clearPendingShare();
     replaceHistoryState({ bocchiSns: true, view: "home", activeTag: null });
     applyHistoryState({ bocchiSns: true, view: "home", activeTag: null });
-    debugLog("share.finish.homeApplied", { returnToSource });
 
     if (Capacitor.isNativePlatform() && returnToSource) {
       window.setTimeout(() => {
-        debugLog("share.finish.minimizeApp", { returnToSource });
         void CapacitorApp.minimizeApp();
       }, 120);
     }
@@ -594,18 +576,8 @@ export default function Home() {
       const shareKey = `${nextShare.url}\n${nextShare.memo}\n${nextShare.images.map((image) => `${image.name}:${image.type}:${image.previewUrl}`).join(",")}`;
       const now = Date.now();
       const lastShare = nativeShareDedupRef.current;
-      if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) {
-        debugLog("share.intent.duplicateIgnored", { url: nextShare.url, elapsedMs: now - lastShare.receivedAt });
-        return;
-      }
+      if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) return;
       nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
-      debugLog("share.intent.received", {
-        url: nextShare.url,
-        memoLength: nextShare.memo.length,
-        imageCount: nextShare.images.length,
-        imageBlobCount: nextShare.imageBlobs.length,
-        currentView: activeViewRef.current,
-      });
 
       launchedFromShareRef.current = true;
       setPendingShareImport(nextShare);
@@ -617,42 +589,6 @@ export default function Home() {
     window.addEventListener("bocchiShareIntent", handleNativeShare);
     return () => window.removeEventListener("bocchiShareIntent", handleNativeShare);
   }, [pushHistoryState]);
-
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    let isMounted = true;
-    let removeListener: (() => void) | null = null;
-
-    void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
-      debugLog("native.appStateChange", {
-        isActive,
-        activeView: activeViewRef.current,
-        launchedFromShare: launchedFromShareRef.current,
-        postsCount: posts.length,
-        visibleCount: visiblePosts.length,
-        newestId: posts[0]?.id,
-        newestVisibleId: visiblePosts[0]?.id,
-        activeTab,
-        activeTag,
-        hasSearch: Boolean(searchQuery.trim()),
-        scrollY: Math.round(window.scrollY),
-      });
-    }).then((handle) => {
-      if (!isMounted) {
-        void handle.remove();
-        return;
-      }
-      removeListener = () => {
-        void handle.remove();
-      };
-    });
-
-    return () => {
-      isMounted = false;
-      removeListener?.();
-    };
-  }, [activeTab, activeTag, posts, searchQuery, visiblePosts]);
 
   useEffect(() => {
     if (isEditorOpen && selectedPost) {
@@ -973,14 +909,6 @@ export default function Home() {
     mediaRefs?: PostMediaRef[];
     thumbnailBlobs?: Blob[];
   }) => {
-    debugLog("share.import.begin", {
-      launchedFromShare: launchedFromShareRef.current,
-      native: Capacitor.isNativePlatform(),
-      type: postData.type,
-      hasUrl: Boolean(postData.url),
-      imageBlobCount: postData.imageBlobs?.length ?? 0,
-      mediaRefCount: postData.mediaRefs?.length ?? 0,
-    });
     const success = await createPost({
       type: postData.type,
       body: postData.body,
@@ -991,15 +919,7 @@ export default function Home() {
       mediaRefs: postData.mediaRefs,
       thumbnailBlobs: postData.thumbnailBlobs,
     }, Capacitor.isNativePlatform() && launchedFromShareRef.current ? { commit: "sync" } : undefined);
-    if (!success) {
-      debugLog("share.import.createFailed", { launchedFromShare: launchedFromShareRef.current });
-      return;
-    }
-    debugLog("share.import.createSucceeded", {
-      id: success.id,
-      launchedFromShare: launchedFromShareRef.current,
-      activeView: activeViewRef.current,
-    });
+    if (!success) return;
     if (Capacitor.isNativePlatform() && launchedFromShareRef.current) {
       finishShareFlow(true);
       return;

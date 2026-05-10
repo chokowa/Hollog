@@ -3,7 +3,6 @@
 import { ChevronDown, Clipboard, ExternalLink, ImagePlus, Link2, Loader2, Tags, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { debugLog } from "@/lib/debug-log";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import {
@@ -189,13 +188,6 @@ export function ShareImport({
   };
 
   const handleSave = async () => {
-    debugLog("shareImport.save.start", {
-      hasUrl: Boolean(url.trim()),
-      sharedImageCount: sharedImagePreviews.length,
-      imageBlobCount: imageBlobs.length,
-      additionalMediaCount: additionalMediaRefs.length,
-      destination: saveDestination,
-    });
     setIsPreparingImages(true);
     try {
       let preparedImageBlobs = imageBlobs;
@@ -257,12 +249,9 @@ export function ShareImport({
         mediaRefs,
         thumbnailBlobs: preparedThumbnailBlobs,
       });
-      debugLog("shareImport.save.importResolved", { hasUrl: Boolean(url.trim()), destination: saveDestination });
     } catch {
-      debugLog("shareImport.save.error", { hasUrl: Boolean(url.trim()), destination: saveDestination });
       return;
     } finally {
-      debugLog("shareImport.save.finish", { hasUrl: Boolean(url.trim()), destination: saveDestination });
       setIsPreparingImages(false);
     }
   };

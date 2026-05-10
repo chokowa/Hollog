@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
-import { debugLog } from "@/lib/debug-log";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { postsRepository } from "@/lib/postsRepository";
 import { uniqueTags } from "@/lib/tag-suggestions";
@@ -205,28 +204,17 @@ export function usePosts() {
   const applyCreatedPostFromAnotherInstance = useCallback(async (event: PostSyncEvent) => {
     if (event.sourceInstanceId === getInstanceId()) return;
 
-    debugLog("posts.sync.created.received", { postId: event.postId, sourceInstanceId: event.sourceInstanceId });
     try {
       const created = await postsRepository.getById(event.postId);
-      if (!created) {
-        debugLog("posts.sync.created.missing", { postId: event.postId });
-        return;
-      }
+      if (!created) return;
 
       postsMutationVersionRef.current += 1;
       setPosts((prev) => {
         const withoutDuplicate = prev.filter((post) => post.id !== created.id);
-        const next = [created, ...withoutDuplicate];
-        debugLog("posts.sync.created.applied", {
-          postId: created.id,
-          previousCount: prev.length,
-          nextCount: next.length,
-          mutationVersion: postsMutationVersionRef.current,
-        });
-        return next;
+        return [created, ...withoutDuplicate];
       });
     } catch (err) {
-      debugLog("posts.sync.created.error", { postId: event.postId, message: err instanceof Error ? err.message : String(err) });
+      setError(err instanceof Error ? err.message : "Failed to sync post");
     }
   }, [getInstanceId]);
 
@@ -239,7 +227,6 @@ export function usePosts() {
       sourceInstanceId: getInstanceId(),
       createdAt: new Date().toISOString(),
     };
-    debugLog("posts.sync.created.broadcast", { postId, sourceInstanceId: event.sourceInstanceId });
 
     try {
       syncChannelRef.current?.postMessage(event);
@@ -286,31 +273,18 @@ export function usePosts() {
   const loadPosts = useCallback(async () => {
     const requestId = ++loadPostsRequestIdRef.current;
     const mutationVersionAtStart = postsMutationVersionRef.current;
-    debugLog("posts.load.start", { requestId, mutationVersionAtStart });
     setError("");
     setIsBusy(true);
     try {
       const nextPosts = await postsRepository.list();
       const isLatestRequest = requestId >= latestAppliedRequestIdRef.current;
       const hasConcurrentMutation = postsMutationVersionRef.current !== mutationVersionAtStart;
-      debugLog("posts.load.result", {
-        requestId,
-        nextCount: nextPosts.length,
-        newestId: nextPosts[0]?.id,
-        isLatestRequest,
-        hasConcurrentMutation,
-        currentMutationVersion: postsMutationVersionRef.current,
-      });
 
       if (isLatestRequest && !hasConcurrentMutation) {
         latestAppliedRequestIdRef.current = requestId;
         setPosts(nextPosts);
-        debugLog("posts.load.applied", { requestId, appliedCount: nextPosts.length, newestId: nextPosts[0]?.id });
-      } else {
-        debugLog("posts.load.skipped", { requestId, isLatestRequest, hasConcurrentMutation });
       }
     } catch (err) {
-      debugLog("posts.load.error", { requestId, message: err instanceof Error ? err.message : String(err) });
       setError(err instanceof Error ? err.message : "Failed to load posts");
     } finally {
       if (requestId === loadPostsRequestIdRef.current) {
@@ -441,14 +415,6 @@ export function usePosts() {
 
   // 操作ハンドラー
   const createPost = async (value: PostFormValue, options: CreatePostOptions = {}) => {
-    debugLog("posts.create.start", {
-      commit: options.commit ?? "default",
-      type: value.type,
-      hasUrl: Boolean(value.url.trim()),
-      imageBlobCount: value.imageBlobs?.length ?? 0,
-      mediaRefCount: value.mediaRefs?.length ?? 0,
-      thumbnailBlobCount: value.thumbnailBlobs?.length ?? 0,
-    });
     setIsBusy(true);
     try {
       const recordInput = toRecordInput(value);
@@ -460,33 +426,19 @@ export function usePosts() {
           ?? (imageBlobs.length > 0 && mediaRefs.length === 0 ? await createThumbnailBlobs(imageBlobs) : undefined),
         source: "manual",
       });
-      debugLog("posts.create.repository.created", { id: created.id, type: created.type, url: created.url ?? "" });
       const commitCreatedPost = () => {
         postsMutationVersionRef.current += 1;
-        setPosts((prev) => {
-          const next = [created, ...prev];
-          debugLog("posts.create.state.committed", {
-            id: created.id,
-            commit: options.commit ?? "default",
-            previousCount: prev.length,
-            nextCount: next.length,
-            mutationVersion: postsMutationVersionRef.current,
-          });
-          return next;
-        });
+        setPosts((prev) => [created, ...prev]);
         setStatusMessage("投稿を保存しました。");
       };
       if (options.commit === "sync") {
-        debugLog("posts.create.flushSync.begin", { id: created.id });
         flushSync(commitCreatedPost);
-        debugLog("posts.create.flushSync.end", { id: created.id });
       } else {
         commitCreatedPost();
       }
       broadcastCreatedPost(created.id);
       return created;
     } catch (err) {
-      debugLog("posts.create.error", { message: err instanceof Error ? err.message : String(err) });
       setError(err instanceof Error ? err.message : "Failed to create post");
       return null;
     } finally {
