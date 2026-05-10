@@ -32,6 +32,21 @@ function formatTime(iso: string) {
   }
 }
 
+function formatDetailedDateTime(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 function renderBodyWithLinks(body: string) {
   const urlPattern = /(https?:\/\/[^\s]+)/g;
   const parts = body.split(urlPattern);
@@ -441,96 +456,110 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
         {renderImages()}
 
-        <p className={`${isDetail ? "mb-4" : "mb-3 text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
+        <p className={`${isDetail ? "mb-4 text-[17px]" : "mb-3 text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
           {renderBodyWithLinks(post.body)}
         </p>
 
-        <div className={`flex items-center justify-between gap-3 border-t border-border ${isDetail ? "pt-3" : "pt-2.5"}`}>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <time className={`shrink-0 text-muted-foreground ${isDetail ? "text-sm" : "text-[15px]"}`}>
-              {formatTime(post.updatedAt)}
+        <div className={`border-t border-border ${isDetail ? "pt-3.5" : "pt-2.5"}`}>
+          {isDetail && (
+            <time className="mb-3 block text-sm text-muted-foreground">
+              {formatDetailedDateTime(post.updatedAt)}
             </time>
-            {post.tags && post.tags.length > 0 && (
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
-                {post.tags.map((tag, index) => (
-                  <button
-                    type="button"
-                    key={index}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTagClick?.(tag);
-                    }}
-                    className={`shrink-0 rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isDetail ? "px-2.5 py-1 text-xs" : "px-2.5 py-1 text-[11px]"}`}
-                    title={`#${tag}で絞り込み`}
-                  >
-                    #{tag}
-                  </button>
-                ))}
-              </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {!isDetail && (
+                <time className="shrink-0 text-[15px] text-muted-foreground">
+                  {formatTime(post.updatedAt)}
+                </time>
+              )}
+              {post.tags && post.tags.length > 0 && (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
+                  {post.tags.map((tag, index) => (
+                    <button
+                      type="button"
+                      key={index}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTagClick?.(tag);
+                      }}
+                      className={`shrink-0 rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isDetail ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-[11px]"}`}
+                      title={`#${tag}で絞り込み`}
+                    >
+                      #{tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {!isDetail && !post.tags?.length && (
+              <time className="shrink-0 text-[15px] text-muted-foreground">
+                {formatTime(post.updatedAt)}
+              </time>
             )}
-          </div>
-          <div ref={actionMenuRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsActionMenuOpen((current) => !current);
-              }}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-              title="操作メニュー"
-              aria-label="操作メニュー"
-              aria-expanded={isActionMenuOpen}
-            >
-              <MoreHorizontal size={18} />
-            </button>
-            {isActionMenuOpen && (
-              <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
-                {hasMedia && onSaveMedia && (
+            <div ref={actionMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsActionMenuOpen((current) => !current);
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
+                title="操作メニュー"
+                aria-label="操作メニュー"
+                aria-expanded={isActionMenuOpen}
+              >
+                <MoreHorizontal size={18} />
+              </button>
+              {isActionMenuOpen && (
+                <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
+                  {hasMedia && onSaveMedia && (
+                    <button
+                      type="button"
+                      onClick={handleSaveMedia}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <Download size={15} />
+                      <span>端末に保存</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={handleSaveMedia}
+                    onClick={handleCopy}
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
                   >
-                    <Download size={15} />
-                    <span>端末に保存</span>
+                    <Copy size={15} />
+                    <span>コピー</span>
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <Copy size={15} />
-                  <span>コピー</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <Share size={15} />
-                  <span>Xへ投稿</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleEdit}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <Edit3 size={15} />
-                  <span>編集</span>
-                </button>
-                {movableType && onTypeChange && (
                   <button
                     type="button"
-                    onClick={(e) => handleMoveType(e, movableType)}
+                    onClick={handleShare}
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
                   >
-                    <ArrowRightLeft size={15} />
-                    <span>{moveLabel}</span>
+                    <Share size={15} />
+                    <span>Xへ投稿</span>
                   </button>
-                )}
-              </div>
-            )}
+                  <button
+                    type="button"
+                    onClick={handleEdit}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  >
+                    <Edit3 size={15} />
+                    <span>編集</span>
+                  </button>
+                  {movableType && onTypeChange && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleMoveType(e, movableType)}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <ArrowRightLeft size={15} />
+                      <span>{moveLabel}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </article>

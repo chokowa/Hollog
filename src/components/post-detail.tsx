@@ -67,55 +67,52 @@ export function PostDetail({
           />
         </div>
 
-        {/* アクション一覧 */}
-        <div className="space-y-3">
-          <button
-            onClick={onCopyForX}
-            className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-muted/50"
-          >
-            <Copy size={20} className="text-muted-foreground" />
-            <span className="font-medium text-foreground">X投稿用にコピー</span>
-          </button>
-
-          <button
-            onClick={onOpenX}
-            className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-muted/50"
-          >
-            <ExternalLink size={20} className="text-muted-foreground" />
-            <span className="font-medium text-foreground">Xを開いて投稿</span>
-          </button>
-
-          <button
-            onClick={onMarkAsPosted}
-            disabled={isBusy}
-            className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-muted/50 disabled:opacity-50"
-          >
-            <CheckCircle2
-              size={20}
-              className={post.type === "posted" ? "text-emerald-500" : "text-muted-foreground"}
-            />
-            <span className={`font-medium ${post.type === "posted" ? "text-emerald-600" : "text-foreground"}`}>
-              {post.type === "posted" ? "投稿済み" : "投稿済みにする"}
-            </span>
-          </button>
-
-          <div className="pt-4">
+        <div className="mb-4 rounded-[28px] border border-border bg-card px-3 py-3 shadow-sm">
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              onClick={onCopyForX}
+              className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
+              <Copy size={22} />
+              <span className="text-[11px] font-medium">コピー</span>
+            </button>
+            <button
+              onClick={onOpenX}
+              className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
+              <ExternalLink size={22} />
+              <span className="text-[11px] font-medium">Xへ投稿</span>
+            </button>
+            <button
+              onClick={onMarkAsPosted}
+              disabled={isBusy}
+              className={`flex flex-col items-center gap-2 rounded-2xl px-2 py-3 transition-colors hover:bg-muted/50 disabled:opacity-50 ${
+                post.type === "posted" ? "text-emerald-500" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <CheckCircle2 size={22} />
+              <span className="text-[11px] font-medium">
+                {post.type === "posted" ? "投稿済み" : "未投稿"}
+              </span>
+            </button>
             <button
               onClick={onEdit}
-              className="mb-3 flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-muted/50"
+              className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
             >
-              <Edit3 size={20} className="text-muted-foreground" />
-              <span className="font-medium text-foreground">内容を編集</span>
-            </button>
-
-            <button
-              onClick={onDelete}
-              className="flex w-full items-center gap-3 rounded-xl border border-red-100 bg-card p-4 shadow-sm transition-colors hover:bg-red-50"
-            >
-              <Trash2 size={20} className="text-red-500" />
-              <span className="font-medium text-red-600">削除する</span>
+              <Edit3 size={22} />
+              <span className="text-[11px] font-medium">編集</span>
             </button>
           </div>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={onDelete}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-card px-4 py-3.5 text-red-600 shadow-sm transition-colors hover:bg-red-50"
+          >
+            <Trash2 size={18} className="text-red-500" />
+            <span className="font-medium">削除する</span>
+          </button>
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
