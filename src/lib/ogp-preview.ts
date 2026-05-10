@@ -3,23 +3,21 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
 const OGP_API_BASE_URL = process.env.NEXT_PUBLIC_OGP_API_BASE_URL?.replace(/\/$/, "");
 const OGP_HTML_MAX_LENGTH = 512_000;
-const AMAZON_CRAWLER_HEADERS = [
+const INSTAGRAM_PREVIEW_IMAGE = "/instagram-preview.svg";
+const BROWSER_HEADERS = {
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
+  "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+} as const;
+
+const CRAWLER_HEADERS = [
   {
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
     "User-Agent": "Twitterbot/1.0",
   },
   {
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
     "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
   },
-  {
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
-    "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
-  },
-] as const;
+].map((headers) => ({ ...BROWSER_HEADERS, ...headers })) as readonly (typeof BROWSER_HEADERS)[];
 
 type YouTubeOEmbed = {
   title?: string;
@@ -73,6 +71,54 @@ function isAmazonUrl(url: string) {
   } catch {
     return false;
   }
+}
+
+function isInstagramUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname === "instagram.com"
+      || hostname.endsWith(".instagram.com")
+      || hostname === "instagr.am";
+  } catch {
+    return false;
+  }
+}
+
+function getSiteNameFallback(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com") || hostname === "instagr.am") {
+      return "Instagram";
+    }
+  } catch {}
+  return "";
+}
+
+function getInstagramFallbackPreview(url: string): OgpPreview | null {
+  if (!isInstagramUrl(url)) return null;
+
+  let title = "Instagram";
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    if (path.startsWith("/reel/") || path.startsWith("/reels/")) {
+      title = "Instagramリール";
+    } else if (path.startsWith("/p/")) {
+      title = "Instagramの投稿";
+    } else if (path.startsWith("/stories/")) {
+      title = "Instagramストーリーズ";
+    } else if (path.startsWith("/share/")) {
+      title = "Instagramの共有リンク";
+    } else if (path !== "/") {
+      title = "Instagramプロフィール";
+    }
+  } catch {}
+
+  return {
+    title,
+    description: "Instagramで共有されたリンク",
+    siteName: "Instagram",
+    image: INSTAGRAM_PREVIEW_IMAGE,
+  };
 }
 
 function extractAmazonDynamicImages(value: string, pageUrl: string) {
@@ -160,7 +206,8 @@ function parseOgpHtml(html: string, pageUrl: string): OgpPreview | null {
   const document = parser.parseFromString(html, "text/html");
   const title = getMetaContent(document, ["og:title", "twitter:title"]) || document.title.trim();
   const description = getMetaContent(document, ["og:description", "twitter:description", "description"]);
-  const siteName = getMetaContent(document, ["og:site_name", "application-name"]);
+  const siteName = getMetaContent(document, ["og:site_name", "application-name", "application-title"])
+    || getSiteNameFallback(pageUrl);
   const image = resolveUrl(getMetaContent(document, ["og:image", "og:image:url", "twitter:image"]), pageUrl);
 
   return title || image
@@ -286,13 +333,8 @@ async function fetchOgpViaNativeHttp(url: string) {
   if (!Capacitor.isNativePlatform()) return null;
 
   const isAmazon = isAmazonUrl(url);
-  const headerCandidates = isAmazon
-    ? AMAZON_CRAWLER_HEADERS
-    : [{
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.7,en;q=0.6",
-      "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
-    }];
+  const isInstagram = isInstagramUrl(url);
+  const headerCandidates = isAmazon || isInstagram ? CRAWLER_HEADERS : [BROWSER_HEADERS];
 
   for (const headers of headerCandidates) {
     const response = await CapacitorHttp.get({
@@ -309,8 +351,12 @@ async function fetchOgpViaNativeHttp(url: string) {
     const preview = isAmazonUrl(pageUrl) || isAmazon
       ? parseAmazonHtml(html, pageUrl)
       : parseOgpHtml(html, pageUrl);
-    if (preview?.image || (!isAmazon && preview?.title)) {
+    const isInstagramPage = isInstagramUrl(pageUrl) || isInstagram;
+    if (preview?.image || (!isAmazon && !isInstagramPage && preview?.title)) {
       return preview;
+    }
+    if (isInstagramPage && preview?.title && preview.title !== "Instagram") {
+      return { ...getInstagramFallbackPreview(pageUrl), ...preview, image: preview.image || INSTAGRAM_PREVIEW_IMAGE };
     }
   }
 
@@ -322,6 +368,9 @@ async function fetchOgpViaNativeHttp(url: string) {
       image: getAmazonAsinImageUrl(asin),
     };
   }
+
+  const instagramFallback = getInstagramFallbackPreview(url);
+  if (instagramFallback) return instagramFallback;
 
   return null;
 }

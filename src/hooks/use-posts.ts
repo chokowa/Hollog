@@ -1,13 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
+import { debugLog } from "@/lib/debug-log";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { postsRepository } from "@/lib/postsRepository";
 import { uniqueTags } from "@/lib/tag-suggestions";
 import type { OgpPreview, Post, PostMediaRef, PostRecordInput, TimelineFilter } from "@/types/post";
 
 const HIDE_POSTED_IN_SOURCE_TABS_KEY = "bocchisns_hide_posted_in_source_tabs";
+const POST_SYNC_EVENT_KEY = "bocchisns_post_sync_event";
+const POST_SYNC_CHANNEL_NAME = "bocchisns_post_sync";
 
 export type PostFormValue = {
   type: Post["type"];
@@ -24,6 +28,17 @@ export type PostFormValue = {
 export type AvailableTag = {
   name: string;
   count: number;
+};
+
+type CreatePostOptions = {
+  commit?: "default" | "sync";
+};
+
+type PostSyncEvent = {
+  kind: "created";
+  postId: string;
+  sourceInstanceId: string;
+  createdAt: string;
 };
 
 const emptyForm: PostFormValue = {
@@ -179,23 +194,123 @@ export function usePosts() {
   const loadPostsRequestIdRef = useRef(0);
   const latestAppliedRequestIdRef = useRef(0);
   const postsMutationVersionRef = useRef(0);
+  const instanceIdRef = useRef<string | null>(null);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
+
+  const getInstanceId = useCallback(() => {
+    instanceIdRef.current ??= `posts-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    return instanceIdRef.current;
+  }, []);
+
+  const applyCreatedPostFromAnotherInstance = useCallback(async (event: PostSyncEvent) => {
+    if (event.sourceInstanceId === getInstanceId()) return;
+
+    debugLog("posts.sync.created.received", { postId: event.postId, sourceInstanceId: event.sourceInstanceId });
+    try {
+      const created = await postsRepository.getById(event.postId);
+      if (!created) {
+        debugLog("posts.sync.created.missing", { postId: event.postId });
+        return;
+      }
+
+      postsMutationVersionRef.current += 1;
+      setPosts((prev) => {
+        const withoutDuplicate = prev.filter((post) => post.id !== created.id);
+        const next = [created, ...withoutDuplicate];
+        debugLog("posts.sync.created.applied", {
+          postId: created.id,
+          previousCount: prev.length,
+          nextCount: next.length,
+          mutationVersion: postsMutationVersionRef.current,
+        });
+        return next;
+      });
+    } catch (err) {
+      debugLog("posts.sync.created.error", { postId: event.postId, message: err instanceof Error ? err.message : String(err) });
+    }
+  }, [getInstanceId]);
+
+  const broadcastCreatedPost = useCallback((postId: string) => {
+    if (typeof window === "undefined") return;
+
+    const event: PostSyncEvent = {
+      kind: "created",
+      postId,
+      sourceInstanceId: getInstanceId(),
+      createdAt: new Date().toISOString(),
+    };
+    debugLog("posts.sync.created.broadcast", { postId, sourceInstanceId: event.sourceInstanceId });
+
+    try {
+      syncChannelRef.current?.postMessage(event);
+    } catch {}
+
+    try {
+      localStorage.setItem(POST_SYNC_EVENT_KEY, JSON.stringify(event));
+    } catch {}
+  }, [getInstanceId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleSyncEvent = (event: PostSyncEvent) => {
+      if (event.kind === "created") {
+        void applyCreatedPostFromAnotherInstance(event);
+      }
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== POST_SYNC_EVENT_KEY || !event.newValue) return;
+      try {
+        handleSyncEvent(JSON.parse(event.newValue) as PostSyncEvent);
+      } catch {}
+    };
+
+    let channel: BroadcastChannel | null = null;
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel(POST_SYNC_CHANNEL_NAME);
+      channel.onmessage = (event: MessageEvent<PostSyncEvent>) => handleSyncEvent(event.data);
+      syncChannelRef.current = channel;
+    }
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      if (syncChannelRef.current === channel) {
+        syncChannelRef.current = null;
+      }
+      channel?.close();
+    };
+  }, [applyCreatedPostFromAnotherInstance]);
 
   // 投稿リストの読み込み
   const loadPosts = useCallback(async () => {
     const requestId = ++loadPostsRequestIdRef.current;
     const mutationVersionAtStart = postsMutationVersionRef.current;
+    debugLog("posts.load.start", { requestId, mutationVersionAtStart });
     setError("");
     setIsBusy(true);
     try {
       const nextPosts = await postsRepository.list();
       const isLatestRequest = requestId >= latestAppliedRequestIdRef.current;
       const hasConcurrentMutation = postsMutationVersionRef.current !== mutationVersionAtStart;
+      debugLog("posts.load.result", {
+        requestId,
+        nextCount: nextPosts.length,
+        newestId: nextPosts[0]?.id,
+        isLatestRequest,
+        hasConcurrentMutation,
+        currentMutationVersion: postsMutationVersionRef.current,
+      });
 
       if (isLatestRequest && !hasConcurrentMutation) {
         latestAppliedRequestIdRef.current = requestId;
         setPosts(nextPosts);
+        debugLog("posts.load.applied", { requestId, appliedCount: nextPosts.length, newestId: nextPosts[0]?.id });
+      } else {
+        debugLog("posts.load.skipped", { requestId, isLatestRequest, hasConcurrentMutation });
       }
     } catch (err) {
+      debugLog("posts.load.error", { requestId, message: err instanceof Error ? err.message : String(err) });
       setError(err instanceof Error ? err.message : "Failed to load posts");
     } finally {
       if (requestId === loadPostsRequestIdRef.current) {
@@ -325,7 +440,15 @@ export function usePosts() {
   }, []);
 
   // 操作ハンドラー
-  const createPost = async (value: PostFormValue) => {
+  const createPost = async (value: PostFormValue, options: CreatePostOptions = {}) => {
+    debugLog("posts.create.start", {
+      commit: options.commit ?? "default",
+      type: value.type,
+      hasUrl: Boolean(value.url.trim()),
+      imageBlobCount: value.imageBlobs?.length ?? 0,
+      mediaRefCount: value.mediaRefs?.length ?? 0,
+      thumbnailBlobCount: value.thumbnailBlobs?.length ?? 0,
+    });
     setIsBusy(true);
     try {
       const recordInput = toRecordInput(value);
@@ -337,11 +460,33 @@ export function usePosts() {
           ?? (imageBlobs.length > 0 && mediaRefs.length === 0 ? await createThumbnailBlobs(imageBlobs) : undefined),
         source: "manual",
       });
-      postsMutationVersionRef.current += 1;
-      setPosts((prev) => [created, ...prev]);
-      setStatusMessage("投稿を保存しました。");
+      debugLog("posts.create.repository.created", { id: created.id, type: created.type, url: created.url ?? "" });
+      const commitCreatedPost = () => {
+        postsMutationVersionRef.current += 1;
+        setPosts((prev) => {
+          const next = [created, ...prev];
+          debugLog("posts.create.state.committed", {
+            id: created.id,
+            commit: options.commit ?? "default",
+            previousCount: prev.length,
+            nextCount: next.length,
+            mutationVersion: postsMutationVersionRef.current,
+          });
+          return next;
+        });
+        setStatusMessage("投稿を保存しました。");
+      };
+      if (options.commit === "sync") {
+        debugLog("posts.create.flushSync.begin", { id: created.id });
+        flushSync(commitCreatedPost);
+        debugLog("posts.create.flushSync.end", { id: created.id });
+      } else {
+        commitCreatedPost();
+      }
+      broadcastCreatedPost(created.id);
       return created;
     } catch (err) {
+      debugLog("posts.create.error", { message: err instanceof Error ? err.message : String(err) });
       setError(err instanceof Error ? err.message : "Failed to create post");
       return null;
     } finally {

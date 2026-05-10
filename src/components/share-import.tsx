@@ -3,6 +3,7 @@
 import { ChevronDown, Clipboard, ExternalLink, ImagePlus, Link2, Loader2, Tags, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { debugLog } from "@/lib/debug-log";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import {
@@ -25,7 +26,7 @@ type ShareImportProps = {
     imageBlobs?: Blob[];
     mediaRefs?: PostMediaRef[];
     thumbnailBlobs?: Blob[];
-  }) => void;
+  }) => void | Promise<void>;
   isBusy?: boolean;
   initialUrl?: string;
   initialMemo?: string;
@@ -188,16 +189,24 @@ export function ShareImport({
   };
 
   const handleSave = async () => {
+    debugLog("shareImport.save.start", {
+      hasUrl: Boolean(url.trim()),
+      sharedImageCount: sharedImagePreviews.length,
+      imageBlobCount: imageBlobs.length,
+      additionalMediaCount: additionalMediaRefs.length,
+      destination: saveDestination,
+    });
     setIsPreparingImages(true);
-    let preparedImageBlobs = imageBlobs;
-    let preparedThumbnailBlobs: Blob[] | undefined;
-    const mediaRefs = [
-      ...sharedImagePreviews
-        .map((image) => image.mediaRef)
-        .filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef)),
-      ...additionalMediaRefs,
-    ];
     try {
+      let preparedImageBlobs = imageBlobs;
+      let preparedThumbnailBlobs: Blob[] | undefined;
+      const mediaRefs = [
+        ...sharedImagePreviews
+          .map((image) => image.mediaRef)
+          .filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef)),
+        ...additionalMediaRefs,
+      ];
+
       if (sharedImagePreviews.length > 0) {
         const readableSharedImages = await Promise.allSettled(
           sharedImagePreviews.map(async (image) => {
@@ -222,37 +231,40 @@ export function ShareImport({
             : undefined;
         }
       }
+
+      preparedThumbnailBlobs = [
+        ...(preparedThumbnailBlobs ?? []),
+        ...(additionalThumbnailBlobs ?? []),
+      ];
+      if (preparedThumbnailBlobs.length === 0) {
+        preparedThumbnailBlobs = undefined;
+      }
+
+      const fullBody = memo.trim()
+        ? memo.trim()
+        : url.trim()
+          ? "共有されたリンク"
+          : preparedImageBlobs.length > 0 || mediaRefs.length > 0
+            ? "共有された画像"
+            : "共有されたテキスト";
+      await onImport({
+        body: fullBody,
+        url: url.trim(),
+        tags,
+        type: saveDestination,
+        ogp: url.trim() ? ogp ?? undefined : undefined,
+        imageBlobs: preparedImageBlobs,
+        mediaRefs,
+        thumbnailBlobs: preparedThumbnailBlobs,
+      });
+      debugLog("shareImport.save.importResolved", { hasUrl: Boolean(url.trim()), destination: saveDestination });
     } catch {
-      setIsPreparingImages(false);
+      debugLog("shareImport.save.error", { hasUrl: Boolean(url.trim()), destination: saveDestination });
       return;
+    } finally {
+      debugLog("shareImport.save.finish", { hasUrl: Boolean(url.trim()), destination: saveDestination });
+      setIsPreparingImages(false);
     }
-
-    preparedThumbnailBlobs = [
-      ...(preparedThumbnailBlobs ?? []),
-      ...(additionalThumbnailBlobs ?? []),
-    ];
-    if (preparedThumbnailBlobs.length === 0) {
-      preparedThumbnailBlobs = undefined;
-    }
-
-    const fullBody = memo.trim()
-      ? memo.trim()
-      : url.trim()
-        ? "共有されたリンク"
-        : preparedImageBlobs.length > 0 || mediaRefs.length > 0
-          ? "共有された画像"
-          : "共有されたテキスト";
-    onImport({
-      body: fullBody,
-      url: url.trim(),
-      tags,
-      type: saveDestination,
-      ogp: url.trim() ? ogp ?? undefined : undefined,
-      imageBlobs: preparedImageBlobs,
-      mediaRefs,
-      thumbnailBlobs: preparedThumbnailBlobs,
-    });
-    setIsPreparingImages(false);
   };
 
   return (
