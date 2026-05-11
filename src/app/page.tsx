@@ -7,7 +7,7 @@ import { usePosts } from "@/hooks/use-posts";
 import { AppHeader } from "@/components/app-header";
 import { PostFeed } from "@/components/post-feed";
 import { BottomNav } from "@/components/bottom-nav";
-import { CalendarView } from "@/components/calendar-view";
+import { CalendarView, type CalendarFilter } from "@/components/calendar-view";
 import { ComposerModal } from "@/components/composer-modal";
 import { PostDetail } from "@/components/post-detail";
 import { ShareImport } from "@/components/share-import";
@@ -18,9 +18,18 @@ import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { validateImageFile } from "@/lib/image-validation";
-import { pickNativeImages, saveNativeImages, type NativeSaveMediaItem } from "@/lib/native-media-picker";
+import {
+  pickNativeImages,
+  readNativeClipboardImages,
+  saveNativeImages,
+  type NativePickedMedia,
+  type NativeSaveMediaItem,
+} from "@/lib/native-media-picker";
+import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
+import { postTypeLabels } from "@/lib/post-labels";
+import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
-import type { Post, PostMediaRef, PostType } from "@/types/post";
+import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
 
 type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings" | "tag-manager";
 type AppHistoryState = {
@@ -36,6 +45,8 @@ type NativeSharePayload = {
   text?: string;
   subject?: string;
   title?: string;
+  htmlText?: string;
+  clipText?: string;
   images?: Array<{
     name?: string;
     type?: string;
@@ -48,6 +59,18 @@ type NativeSharePayload = {
     storage?: "device-reference" | "app-local-copy";
   }>;
 };
+
+const URL_PATTERN = /https?:\/\/[^\s<>"']+/;
+
+function extractSharedUrl(...values: string[]) {
+  for (const value of values) {
+    const match = value.match(URL_PATTERN);
+    if (match?.[0]) {
+      return match[0].replace(/[)、。,\].!?]+$/, "");
+    }
+  }
+  return "";
+}
 
 type SharedImagePreview = {
   id: string;
@@ -63,6 +86,21 @@ type PendingShareImport = {
   images: SharedImagePreview[];
   imageBlobs: Blob[];
   mediaRefs: PostMediaRef[];
+};
+
+type AppToast = {
+  message: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+};
+
+type CalendarState = {
+  selectedDateKey: string | null;
+  visibleMonthKey: string | null;
+  activeFilter: CalendarFilter;
+  activeTags: string[];
 };
 
 function dataUrlToBlob(dataUrl: string, fallbackType: string) {
@@ -131,15 +169,44 @@ function sharedImageToPreview(image: NonNullable<NativeSharePayload["images"]>[n
   return null;
 }
 
+function appendPendingTag(tagsText: string, pendingTag?: string) {
+  const trimmed = pendingTag?.trim().replace(/^#/, "");
+  if (!trimmed) return tagsText;
+
+  const currentTags = tagsText.split(",").map((tag) => tag.trim()).filter(Boolean);
+  if (currentTags.includes(trimmed)) return tagsText;
+
+  return [...currentTags, trimmed].join(", ");
+}
+
+function nativeMediaToRefs(items: NativePickedMedia[], prefix: string): PostMediaRef[] {
+  return items.map((item, index) => ({
+    id: item.id || `${prefix}-media-${Date.now()}-${index + 1}`,
+    kind: item.kind || "image",
+    storage: item.storage || "device-reference",
+    uri: item.uri,
+    mimeType: item.mimeType,
+    name: item.name,
+  }));
+}
+
+async function nativePreviewBlobsToThumbnails(items: NativePickedMedia[]) {
+  const previewBlobs = items
+    .map((item) => item.previewDataUrl ? dataUrlToBlob(item.previewDataUrl, item.mimeType || "image/jpeg") : null)
+    .filter((blob): blob is Blob => Boolean(blob));
+  return previewBlobs.length > 0 ? await createThumbnailBlobs(previewBlobs) : undefined;
+}
+
 function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   const text = payload.text?.trim() ?? "";
   const subject = payload.subject?.trim() ?? "";
   const title = payload.title?.trim() ?? "";
-  const urlMatch = text.match(/https?:\/\/[^\s]+/);
-  const url = urlMatch?.[0] ?? "";
+  const htmlText = payload.htmlText?.trim() ?? "";
+  const clipText = payload.clipText?.trim() ?? "";
+  const url = extractSharedUrl(text, subject, title, htmlText, clipText);
   const memoParts = [
     subject || title,
-    url ? text.replace(url, "").trim() : text,
+    url ? text.replace(url, "").trim() : text || clipText,
   ].filter(Boolean);
 
   const images = (payload.images ?? [])
@@ -191,23 +258,57 @@ export default function Home() {
   const [imageViewerOriginRect, setImageViewerOriginRect] = useState<ImageOriginRect | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [systemTaggingEnabled, setSystemTaggingEnabledState] = useState(readSystemTaggingEnabled);
   const [composerValue, setComposerValue] = useState(emptyForm);
+  const [shareDraftMediaRefs, setShareDraftMediaRefs] = useState<PostMediaRef[]>([]);
+  const [shareDraftThumbnailBlobs, setShareDraftThumbnailBlobs] = useState<Blob[] | undefined>();
   const [imageError, setImageError] = useState<string>("");
+  const [toast, setToast] = useState<AppToast | null>(null);
+  const [isQuickPosting, setIsQuickPosting] = useState(false);
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
+  const [calendarState, setCalendarState] = useState<CalendarState>({
+    selectedDateKey: null,
+    visibleMonthKey: null,
+    activeFilter: "all",
+    activeTags: [],
+  });
   const activeViewRef = useRef<ActiveView>("home");
   const selectedPostIdRef = useRef<string | null>(null);
   const activeTagRef = useRef<string | null>(null);
+  const launchedFromShareRef = useRef(false);
   const lastScrollYRef = useRef(0);
   const scrollIntentStartYRef = useRef(0);
   const scrollIntentDirectionRef = useRef<"up" | "down" | null>(null);
   const isTopChromeHiddenRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
   const scrollChromeTimerRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const quickImageInputRef = useRef<HTMLInputElement | null>(null);
+  const quickCameraInputRef = useRef<HTMLInputElement | null>(null);
   const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
   const nativeShareDedupRef = useRef<{ key: string; receivedAt: number } | null>(null);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
+  const showToast = useCallback((message: string, action?: AppToast["action"]) => {
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    setToast({ message, action });
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
   const existingTags = useMemo(() => {
     const tagSet = new Set<string>();
     posts.forEach((post) => {
@@ -306,6 +407,28 @@ export default function Home() {
   const resetToHome = useCallback((nextActiveTag: string | null = null) => {
     moveToHistoryState({ bocchiSns: true, view: "home", activeTag: nextActiveTag });
   }, [moveToHistoryState]);
+
+  const clearPendingShare = useCallback(() => {
+    setPendingShareImport(null);
+    setShareDraftMediaRefs([]);
+    setShareDraftThumbnailBlobs(undefined);
+  }, []);
+
+  const finishShareFlow = useCallback((returnToSource: boolean) => {
+    launchedFromShareRef.current = false;
+    clearPendingShare();
+    replaceHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+    applyHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+    setTimelineChromeHidden(false);
+    scrollViewportToTop("auto");
+    window.dispatchEvent(new Event("bocchi:timeline-top"));
+
+    if (Capacitor.isNativePlatform() && returnToSource) {
+      window.setTimeout(() => {
+        void CapacitorApp.minimizeApp();
+      }, 120);
+    }
+  }, [applyHistoryState, clearPendingShare, replaceHistoryState, scrollViewportToTop, setTimelineChromeHidden]);
 
   const resetToCalendar = useCallback(() => {
     moveToHistoryState({ bocchiSns: true, view: "calendar" });
@@ -516,7 +639,10 @@ export default function Home() {
       if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) return;
       nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
 
+      launchedFromShareRef.current = true;
       setPendingShareImport(nextShare);
+      setShareDraftMediaRefs([]);
+      setShareDraftThumbnailBlobs(undefined);
       pushHistoryState({ bocchiSns: true, view: "share" });
     };
 
@@ -573,7 +699,26 @@ export default function Home() {
 
   const replaceToHome = useCallback(() => {
     resetToHome(null);
-  }, [resetToHome]);
+    setTimelineChromeHidden(false);
+    scrollViewportToTop("auto");
+    window.dispatchEvent(new Event("bocchi:timeline-top"));
+  }, [resetToHome, scrollViewportToTop, setTimelineChromeHidden]);
+
+  const showQuickPostToast = useCallback((post: Post | null, message: string) => {
+    if (!post) {
+      showToast("投稿できませんでした。");
+      return;
+    }
+
+    showToast(message, {
+      label: "編集",
+      onClick: () => openEditComposer(post),
+    });
+  }, [openEditComposer, showToast]);
+
+  const setSystemTaggingEnabled = useCallback((enabled: boolean) => {
+    setSystemTaggingEnabledState(writeSystemTaggingEnabled(enabled));
+  }, []);
 
   const replaceToDetail = useCallback((postId: string) => {
     const detailState: AppHistoryState = { bocchiSns: true, view: "detail", postId };
@@ -599,14 +744,198 @@ export default function Home() {
     if (!currentError && validFiles.length > 0) {
       setComposerValue((prev) => {
         const existingBlobs = prev.imageBlobs || [];
+        const existingBlobIds = normalizeImageBlobIds(existingBlobs, prev.imageBlobIds) || [];
         const nextBlobs = [...existingBlobs, ...validFiles];
         if (nextBlobs.length > 4) {
           setImageError("画像は最大4枚まで選択できます。");
           return prev;
         }
-        return { ...prev, imageBlobs: nextBlobs };
+        const nextImageBlobIds = [...existingBlobIds, ...validFiles.map(() => createImageBlobId())];
+        return {
+          ...prev,
+          imageBlobs: nextBlobs,
+          imageBlobIds: nextImageBlobIds,
+          mediaOrder: normalizeMediaOrder({
+            imageBlobs: nextBlobs,
+            imageBlobIds: nextImageBlobIds,
+            mediaRefs: prev.mediaRefs,
+            mediaOrder: [
+              ...(prev.mediaOrder ?? normalizeMediaOrder(prev) ?? []),
+              ...nextImageBlobIds.slice(existingBlobIds.length).map((id) => ({ source: "imageBlob" as const, id })),
+            ],
+          }),
+        };
       });
     }
+  }, []);
+
+  const createQuickImagePostFromFiles = useCallback(async (files: File[]) => {
+    if (isQuickPosting) return;
+
+    let currentError = "";
+    const validFiles: File[] = [];
+    for (const file of files.slice(0, 4)) {
+      const error = validateImageFile(file);
+      if (error) {
+        currentError = error;
+        break;
+      }
+      validFiles.push(file);
+    }
+
+    if (currentError) {
+      showToast(currentError);
+      return;
+    }
+    if (validFiles.length === 0) {
+      showToast("画像が選択されませんでした。");
+      return;
+    }
+
+    setIsQuickPosting(true);
+    try {
+      const imageBlobIds = validFiles.map(() => createImageBlobId());
+      const thumbnailBlobs = await createThumbnailBlobs(validFiles);
+      const created = await createPost({
+        ...emptyForm,
+        type: "post",
+        imageBlobs: validFiles,
+        imageBlobIds,
+        mediaOrder: normalizeMediaOrder({
+          imageBlobs: validFiles,
+          imageBlobIds,
+          mediaOrder: imageBlobIds.map((id) => ({ source: "imageBlob" as const, id })),
+        }),
+        thumbnailBlobs,
+      });
+      showQuickPostToast(created, "画像を投稿しました。");
+      if (created) replaceToHome();
+    } finally {
+      setIsQuickPosting(false);
+    }
+  }, [createPost, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
+
+  const createQuickImagePostFromNativeItems = useCallback(async (items: NativePickedMedia[], source: string) => {
+    if (isQuickPosting) return;
+    if (items.length === 0) {
+      showToast(source === "clipboard" ? "クリップボードに画像が見つかりませんでした。" : "画像が選択されませんでした。");
+      return;
+    }
+
+    setIsQuickPosting(true);
+    try {
+      const mediaRefs = nativeMediaToRefs(items.slice(0, 4), source);
+      const thumbnailBlobs = await nativePreviewBlobsToThumbnails(items.slice(0, 4));
+      const created = await createPost({
+        ...emptyForm,
+        type: "post",
+        mediaRefs,
+        mediaOrder: normalizeMediaOrder({
+          mediaRefs,
+          mediaOrder: mediaRefs.map((mediaRef) => ({ source: "mediaRef" as const, id: mediaRef.id })),
+        }),
+        thumbnailBlobs,
+      });
+      showQuickPostToast(created, "画像を投稿しました。");
+      if (created) replaceToHome();
+    } finally {
+      setIsQuickPosting(false);
+    }
+  }, [createPost, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
+
+  const handleQuickImagePost = useCallback(async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await pickNativeImages(4);
+        await createQuickImagePostFromNativeItems(result.items ?? [], "quick-picked");
+      } catch {
+        showToast("画像を選択できませんでした。");
+      }
+      return;
+    }
+
+    quickImageInputRef.current?.click();
+  }, [createQuickImagePostFromNativeItems, showToast]);
+
+  const handleQuickCameraPost = useCallback(() => {
+    quickCameraInputRef.current?.click();
+  }, []);
+
+  const handleQuickClipboardPost = useCallback(async () => {
+    if (isQuickPosting) return;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await readNativeClipboardImages(4);
+        if (result.items?.length) {
+          await createQuickImagePostFromNativeItems(result.items, "clipboard");
+          return;
+        }
+      } catch {
+        // 画像ではないクリップボードなら、続けてURLとして読みにいく。
+      }
+    }
+
+    try {
+      const clipboardText = await navigator.clipboard?.readText?.();
+      const url = extractSharedUrl(clipboardText ?? "");
+      if (!url) {
+        showToast("クリップボードに画像またはURLが見つかりませんでした。");
+        return;
+      }
+
+      setIsQuickPosting(true);
+      const created = await createPost({
+        ...emptyForm,
+        type: "clip",
+        url,
+      });
+      showQuickPostToast(created, "リンクをクリップしました。");
+      if (created) replaceToHome();
+    } catch {
+      showToast("クリップボードを読み込めませんでした。");
+    } finally {
+      setIsQuickPosting(false);
+    }
+  }, [createPost, createQuickImagePostFromNativeItems, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
+
+  const addNativeItemsToComposer = useCallback(async (items: NativePickedMedia[], source: string) => {
+    if (items.length === 0) {
+      setImageError(source === "clipboard" ? "クリップボードに画像が見つかりませんでした。" : "");
+      return;
+    }
+
+    const mediaRefs = nativeMediaToRefs(items, source);
+    const thumbnailBlobs = await nativePreviewBlobsToThumbnails(items);
+
+    setImageError("");
+    setComposerValue((prev) => {
+      const nextImageBlobIds = normalizeImageBlobIds(prev.imageBlobs, prev.imageBlobIds);
+      const existingOrder = prev.mediaOrder ?? normalizeMediaOrder(prev) ?? [];
+      const nextCount = (prev.imageBlobs || []).length + (prev.mediaRefs || []).length + mediaRefs.length;
+      if (nextCount > 4) {
+        setImageError("画像は最大4枚まで選択できます。");
+        return prev;
+      }
+
+      return {
+        ...prev,
+        mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
+        imageBlobIds: nextImageBlobIds,
+        mediaOrder: normalizeMediaOrder({
+          imageBlobs: prev.imageBlobs,
+          imageBlobIds: nextImageBlobIds,
+          mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
+          mediaOrder: [
+            ...existingOrder,
+            ...mediaRefs.map((mediaRef) => ({ source: "mediaRef" as const, id: mediaRef.id })),
+          ],
+        }),
+        thumbnailBlobs: thumbnailBlobs
+          ? [...(prev.thumbnailBlobs || []), ...thumbnailBlobs]
+          : prev.thumbnailBlobs,
+      };
+    });
   }, []);
 
   const handleNativeImagesSelect = useCallback(async () => {
@@ -623,39 +952,88 @@ export default function Home() {
       const result = await pickNativeImages(remaining);
       if (!result.items || result.items.length === 0) return;
 
-      const mediaRefs: PostMediaRef[] = result.items.map((item, index) => ({
-        id: item.id || `picked-media-${Date.now()}-${index + 1}`,
-        kind: item.kind || "image",
-        storage: item.storage || "device-reference",
-        uri: item.uri,
-        mimeType: item.mimeType,
-        name: item.name,
-      }));
-      const previewBlobs = result.items
-        .map((item) => item.previewDataUrl ? dataUrlToBlob(item.previewDataUrl, item.mimeType || "image/jpeg") : null)
-        .filter((blob): blob is Blob => Boolean(blob));
-      const thumbnailBlobs = previewBlobs.length > 0 ? await createThumbnailBlobs(previewBlobs) : undefined;
-
-      setImageError("");
-      setComposerValue((prev) => {
-        const nextCount = (prev.imageBlobs || []).length + (prev.mediaRefs || []).length + mediaRefs.length;
-        if (nextCount > 4) {
-          setImageError("画像は最大4枚まで選択できます。");
-          return prev;
-        }
-
-        return {
-          ...prev,
-          mediaRefs: [...(prev.mediaRefs || []), ...mediaRefs],
-          thumbnailBlobs: thumbnailBlobs
-            ? [...(prev.thumbnailBlobs || []), ...thumbnailBlobs]
-            : prev.thumbnailBlobs,
-        };
-      });
+      await addNativeItemsToComposer(result.items, "picked");
     } catch {
       setImageError("画像を選択できませんでした。");
     }
-  }, [composerValue.imageBlobs, composerValue.mediaRefs]);
+  }, [addNativeItemsToComposer, composerValue.imageBlobs, composerValue.mediaRefs]);
+
+  const handleNativeClipboardImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (composerValue.imageBlobs || []).length + (composerValue.mediaRefs || []).length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await readNativeClipboardImages(remaining);
+      await addNativeItemsToComposer(result.items ?? [], "clipboard");
+    } catch {
+      setImageError("クリップボードから画像を読み込めませんでした。");
+    }
+  }, [addNativeItemsToComposer, composerValue.imageBlobs, composerValue.mediaRefs]);
+
+  const addNativeItemsToShareDraft = useCallback(async (items: NativePickedMedia[], source: string) => {
+    if (items.length === 0) {
+      setImageError(source === "clipboard" ? "クリップボードに画像が見つかりませんでした。" : "");
+      return;
+    }
+
+    const mediaRefs = nativeMediaToRefs(items, source);
+    const thumbnailBlobs = await nativePreviewBlobsToThumbnails(items);
+
+    setImageError("");
+    setShareDraftMediaRefs((current) => {
+      const existingCount = (pendingShareImport?.images.length ?? 0) + (pendingShareImport?.imageBlobs.length ?? 0) + current.length;
+      if (existingCount + mediaRefs.length > 4) {
+        setImageError("画像は最大4枚まで選択できます。");
+        return current;
+      }
+      return [...current, ...mediaRefs];
+    });
+    if (thumbnailBlobs) {
+      setShareDraftThumbnailBlobs((current) => [...(current || []), ...thumbnailBlobs]);
+    }
+  }, [pendingShareImport?.imageBlobs, pendingShareImport?.images]);
+
+  const handleShareNativeImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (pendingShareImport?.images.length ?? 0) + (pendingShareImport?.imageBlobs.length ?? 0) + shareDraftMediaRefs.length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await pickNativeImages(remaining);
+      await addNativeItemsToShareDraft(result.items ?? [], "picked");
+    } catch {
+      setImageError("画像を選択できませんでした。");
+    }
+  }, [addNativeItemsToShareDraft, pendingShareImport?.imageBlobs, pendingShareImport?.images, shareDraftMediaRefs.length]);
+
+  const handleShareNativeClipboardImagesSelect = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const currentCount = (pendingShareImport?.images.length ?? 0) + (pendingShareImport?.imageBlobs.length ?? 0) + shareDraftMediaRefs.length;
+    const remaining = 4 - currentCount;
+    if (remaining <= 0) {
+      setImageError("画像は最大4枚まで選択できます。");
+      return;
+    }
+
+    try {
+      const result = await readNativeClipboardImages(remaining);
+      await addNativeItemsToShareDraft(result.items ?? [], "clipboard");
+    } catch {
+      setImageError("クリップボードから画像を読み込めませんでした。");
+    }
+  }, [addNativeItemsToShareDraft, pendingShareImport?.imageBlobs, pendingShareImport?.images, shareDraftMediaRefs.length]);
 
   const composerPreviewUrls = useMemo(
     () => (composerValue.imageBlobs || []).map((blob) => URL.createObjectURL(blob)),
@@ -671,20 +1049,11 @@ export default function Home() {
     return () => composerPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [composerPreviewUrls]);
 
-  // 投稿送信ハンドラー
-  const handleSubmit = async () => {
-    const success = await createPost(composerValue);
-    if (success) {
-      setComposerValue(emptyForm);
-      replaceToHome();
-    }
-  };
-
   // 詳細画面からの操作
   const handleCopyForX = async () => {
     if (!selectedPost) return;
     const copied = await copyTextToClipboard(buildTweetText(selectedPost));
-    alert(copied ? "X投稿用テキストをコピーしました。" : "コピーできませんでした。");
+    showToast(copied ? "X投稿用テキストをコピーしました。" : "コピーできませんでした。");
   };
 
   const handleOpenX = () => {
@@ -730,19 +1099,20 @@ export default function Home() {
 
       if (items.length === 0) {
         const hasDeviceReference = post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image" && mediaRef.storage === "device-reference");
-        alert(hasDeviceReference ? "この画像は元ファイル参照のため、すでに端末内にあります。" : "保存できる画像がありません。");
+        showToast(hasDeviceReference ? "この画像はすでに端末内にあります。" : "保存できる画像がありません。");
         return;
       }
 
       const result = await saveNativeImages(items);
-      alert(result.savedCount > 0 ? "端末に保存しました。" : "保存できませんでした。");
+      showToast(result.savedCount > 0 ? "端末に保存しました。" : "保存できませんでした。");
     } catch {
-      alert("保存できませんでした。");
+      showToast("保存できませんでした。");
     }
-  }, []);
+  }, [showToast]);
 
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
-    await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
+    const success = await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
+    showToast(success ? `${postTypeLabels[nextType]}に移動しました。` : "移動できませんでした。");
   };
 
   const handleDelete = async () => {
@@ -758,6 +1128,7 @@ export default function Home() {
     url: string;
     tags: string[];
     type: PostType;
+    ogp?: OgpPreview;
     imageBlobs?: Blob[];
     mediaRefs?: PostMediaRef[];
     thumbnailBlobs?: Blob[];
@@ -766,12 +1137,18 @@ export default function Home() {
       type: postData.type,
       body: postData.body,
       url: postData.url,
+      ogp: postData.url ? postData.ogp : undefined,
       tagsText: postData.tags.join(", "),
       imageBlobs: postData.imageBlobs,
       mediaRefs: postData.mediaRefs,
       thumbnailBlobs: postData.thumbnailBlobs,
-    });
-    if (success) replaceToHome();
+    }, Capacitor.isNativePlatform() && launchedFromShareRef.current ? { commit: "sync" } : undefined);
+    if (!success) return;
+    if (Capacitor.isNativePlatform() && launchedFromShareRef.current) {
+      finishShareFlow(true);
+      return;
+    }
+    replaceToHome();
   };
 
   const postViewerImages = imageViewerRoute?.kind === "post"
@@ -789,6 +1166,29 @@ export default function Home() {
       onClose={closeImageViewer}
     />
   ) : null;
+  const toastElement = toast ? (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex justify-center px-4">
+      <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-xl">
+        <span>{toast.message}</span>
+        {toast.action && (
+          <button
+            type="button"
+            className="rounded-full border border-background/35 px-3 py-1 text-xs font-bold text-background active:scale-95"
+            onClick={() => {
+              setToast(null);
+              if (toastTimerRef.current) {
+                window.clearTimeout(toastTimerRef.current);
+                toastTimerRef.current = null;
+              }
+              toast.action?.onClick();
+            }}
+          >
+            {toast.action.label}
+          </button>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   /* detail / share 画面は全画面で展開 */
   if (activeView === "detail" && selectedPost) {
@@ -799,6 +1199,9 @@ export default function Home() {
           imageUrls={postImageUrlMap[selectedPost.id]}
           onBack={goBackOrHome}
           onCopyForX={handleCopyForX}
+          onCardCopy={(_, copied) => {
+            showToast(copied ? "本文をコピーしました。" : "コピーできませんでした。");
+          }}
           onOpenX={handleOpenX}
           onMarkAsPosted={handleMarkAsPosted}
           onEdit={() => openEditComposer(selectedPost)}
@@ -819,24 +1222,40 @@ export default function Home() {
         <ComposerModal
           isOpen={isComposerOpen}
           onClose={closeComposer}
-          onSubmit={async () => {
+          title={isEditorOpen ? "投稿を編集" : "新しい投稿"}
+          submitLabel="保存する"
+          onSubmit={async (pendingTag) => {
             if (isEditorOpen && selectedPost) {
-              const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
+              const success = await updatePost(
+                selectedPost.id,
+                { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) },
+                selectedPost.source,
+              );
               if (success) replaceToDetail(selectedPost.id);
             } else {
-              await handleSubmit();
+              const nextValue = pendingTag
+                ? { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) }
+                : composerValue;
+              const success = await createPost(nextValue);
+              if (success) {
+                setComposerValue(emptyForm);
+                replaceToHome();
+              }
             }
           }}
           value={composerValue}
           onChange={setComposerValue}
           onImagesSelect={handleImagesSelect}
           onNativeImagesSelect={Capacitor.isNativePlatform() ? handleNativeImagesSelect : undefined}
+          onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleNativeClipboardImagesSelect : undefined}
           imageError={imageError}
           isBusy={isBusy}
           imagePreviewUrls={composerPreviewUrls}
           mediaPreviewUrls={composerMediaPreviewUrls}
+          autoTagUrls={systemTaggingEnabled && !isEditorOpen}
         />
         {postImageViewer}
+        {toastElement}
       </main>
     );
   }
@@ -846,14 +1265,29 @@ export default function Home() {
       <main className="flex flex-col flex-1">
         <ShareImport
           key={`${pendingShareImport?.url ?? ""}\n${pendingShareImport?.memo ?? ""}\n${pendingShareImport?.images.map((image) => image.id).join(",") ?? ""}`}
-          onBack={goBackOrHome}
+          onBack={() => {
+            if (Capacitor.isNativePlatform() && launchedFromShareRef.current) {
+              finishShareFlow(true);
+              return;
+            }
+            goBackOrHome();
+          }}
           onImport={handleImportShare}
           isBusy={isBusy}
           initialUrl={pendingShareImport?.url ?? ""}
           initialMemo={pendingShareImport?.memo ?? ""}
-          initialImagePreviews={pendingShareImport?.images ?? []}
-          initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
-        />
+        initialImagePreviews={pendingShareImport?.images ?? []}
+        initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
+        additionalMediaRefs={shareDraftMediaRefs}
+        additionalThumbnailBlobs={shareDraftThumbnailBlobs}
+        onNativeImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeImagesSelect : undefined}
+        onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeClipboardImagesSelect : undefined}
+        onAdditionalMediaRemove={(mediaRefId) => {
+          setShareDraftMediaRefs((current) => current.filter((mediaRef) => mediaRef.id !== mediaRefId));
+          setShareDraftThumbnailBlobs(undefined);
+        }}
+      />
+      {toastElement}
       </main>
     );
   }
@@ -868,8 +1302,11 @@ export default function Home() {
           onThemeChange={setTheme}
           hidePostedInSourceTabs={hidePostedInSourceTabs}
           onHidePostedInSourceTabsChange={setHidePostedInSourceTabs}
+          systemTaggingEnabled={systemTaggingEnabled}
+          onSystemTaggingEnabledChange={setSystemTaggingEnabled}
           existingTags={existingTags}
         />
+        {toastElement}
       </main>
     );
   }
@@ -885,6 +1322,7 @@ export default function Home() {
           existingTags={existingTags}
           onBulkUpdatePostTags={bulkUpdatePostTags}
         />
+        {toastElement}
       </main>
     );
   }
@@ -913,6 +1351,9 @@ export default function Home() {
             postThumbnailUrlMap={postThumbnailUrlMap}
             onPostClick={openPostDetail}
             onPostEdit={openEditComposer}
+            onPostCopy={(_, copied) => {
+              showToast(copied ? "本文をコピーしました。" : "コピーできませんでした。");
+            }}
             onPostSaveMedia={handleSavePostMedia}
             onPostTypeChange={handlePostTypeChange}
             onPostOgpFetched={(post, ogp) => {
@@ -944,8 +1385,15 @@ export default function Home() {
           postThumbnailUrlMap={postThumbnailUrlMap}
           onPostClick={openPostDetail}
           onPostEdit={openEditComposer}
-          onTagClick={(tag) => {
-            resetToHome(tag);
+          persistedSelectedDateKey={calendarState.selectedDateKey}
+          persistedVisibleMonthKey={calendarState.visibleMonthKey}
+          persistedActiveFilter={calendarState.activeFilter}
+          persistedActiveTags={calendarState.activeTags}
+          onCalendarStateChange={(nextState) => {
+            setCalendarState((current) => ({ ...current, ...nextState }));
+          }}
+          onCalendarFilterChange={(nextFilterState) => {
+            setCalendarState((current) => ({ ...current, ...nextFilterState }));
           }}
         />
       )}
@@ -976,29 +1424,71 @@ export default function Home() {
         }}
         onPostClick={openNewComposer}
         onHomeClick={requestTimelineTop}
+        onQuickImagePost={handleQuickImagePost}
+        onQuickCameraPost={handleQuickCameraPost}
+        onQuickClipboardPost={handleQuickClipboardPost}
+      />
+
+      <input
+        ref={quickImageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []));
+          event.target.value = "";
+        }}
+      />
+      <input
+        ref={quickCameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => {
+          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []));
+          event.target.value = "";
+        }}
       />
 
       <ComposerModal
         isOpen={isComposerOpen}
         onClose={closeComposer}
-        onSubmit={async () => {
+        title={isEditorOpen ? "投稿を編集" : "新しい投稿"}
+        submitLabel="保存する"
+        onSubmit={async (pendingTag) => {
           if (isEditorOpen && selectedPost) {
-            const success = await updatePost(selectedPost.id, composerValue, selectedPost.source);
+            const success = await updatePost(
+              selectedPost.id,
+              { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) },
+              selectedPost.source,
+            );
             if (success) replaceToDetail(selectedPost.id);
           } else {
-            await handleSubmit();
+            const nextValue = pendingTag
+              ? { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) }
+              : composerValue;
+            const success = await createPost(nextValue);
+            if (success) {
+              setComposerValue(emptyForm);
+              replaceToHome();
+            }
           }
         }}
         value={composerValue}
         onChange={setComposerValue}
         onImagesSelect={handleImagesSelect}
         onNativeImagesSelect={Capacitor.isNativePlatform() ? handleNativeImagesSelect : undefined}
+        onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleNativeClipboardImagesSelect : undefined}
         imageError={imageError}
         isBusy={isBusy}
         imagePreviewUrls={composerPreviewUrls}
         mediaPreviewUrls={composerMediaPreviewUrls}
+        autoTagUrls={systemTaggingEnabled && !isEditorOpen}
       />
       {postImageViewer}
+      {toastElement}
     </main>
   );
 }

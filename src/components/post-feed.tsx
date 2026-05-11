@@ -20,6 +20,7 @@ type PostFeedProps = {
   postThumbnailUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
   onPostEdit: (post: Post) => void;
+  onPostCopy: (post: Post, copied: boolean) => void;
   onPostSaveMedia: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
@@ -139,7 +140,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     startedOnMediaRef.current = Boolean(target.closest("[data-card-media], img"));
-    if (target.closest("button, a, input, textarea, select") || startedOnMediaRef.current) return;
+    if (target.closest("button:not([data-swipe-start]), a, input, textarea, select") || startedOnMediaRef.current) return;
 
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -225,6 +226,15 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     onOpen();
   };
 
+  const handleClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClickRef.current && offsetX === 0) return;
+
+    suppressNextClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+    setOffsetX(0);
+  };
+
   return (
     <div className="relative overflow-hidden rounded-xl">
       <div className="absolute inset-y-0 right-4 flex items-center">
@@ -239,6 +249,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
         onPointerMove={handlePointerMove}
         onPointerUp={finishSwipe}
         onPointerCancel={finishSwipe}
+        onClickCapture={handleClickCapture}
         onClick={handleClick}
       >
         {children}
@@ -258,6 +269,7 @@ export function PostFeed({
   postThumbnailUrlMap,
   onPostClick,
   onPostEdit,
+  onPostCopy,
   onPostSaveMedia,
   onPostTypeChange,
   onPostOgpFetched,
@@ -470,12 +482,12 @@ export function PostFeed({
   }, [hasMoreItems, showMoreItems, totalItemCount, visibleItemCount]);
 
   return (
-    <div className="flex flex-col gap-4 pb-28">
+    <div className="flex flex-col gap-3 pb-28">
       <div
         className="timeline-top-chrome sticky top-0 z-20 transform-gpu bg-background will-change-transform transition-transform duration-[260ms] ease-out"
       >
         {header}
-        <div className="px-4 py-2">
+        <div className="px-3 pb-2 pt-1 sm:px-4">
           <TabSwitcher
             tabs={timelineTabs}
             value={activeTab}
@@ -540,7 +552,7 @@ export function PostFeed({
         </div>
       </div>
 
-      <div className="px-4">
+      <div className="px-2 sm:px-3">
         {isBooting ? (
           <div className="flex items-center justify-center py-10 text-sm text-[var(--muted)]">
             読み込み中...
@@ -576,8 +588,8 @@ export function PostFeed({
                   type="button"
                   onClick={(event) => openMediaViewer(event, itemIndex)}
                   className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm transition hover:bg-black/75 active:scale-95"
-                  aria-label="画像を連続表示"
-                  title="画像を連続表示"
+                  aria-label="拡大表示"
+                  title="拡大表示"
                 >
                   <ZoomIn size={15} />
                 </button>
@@ -598,17 +610,17 @@ export function PostFeed({
           <div
             key={listAnimationKey}
             ref={postsContainerRef}
-            className="timeline-list-swap relative flex flex-col gap-6 pl-6"
+            className="timeline-list-swap relative flex flex-col gap-5 pl-4 sm:pl-5"
           >
-            <div className="pointer-events-none absolute bottom-0 left-[7px] top-3 w-px bg-border" />
+            <div className="pointer-events-none absolute bottom-0 left-[5px] top-3 w-px bg-border" />
             {groupedVisiblePosts.map((group) => (
               <section
                 key={group.dateKey}
                 className="timeline-date-section relative"
                 aria-labelledby={`timeline-date-${group.dateKey}`}
               >
-                <div className="mb-3 flex items-center gap-3">
-                  <span className="absolute left-[-23px] top-[7px] z-10 h-3 w-3 rounded-full border-2 border-background bg-muted-foreground shadow-[0_0_0_1px_var(--border)]" />
+                <div className="mb-2.5 flex items-center gap-3">
+                  <span className="absolute left-[-15px] top-[7px] z-10 h-3 w-3 rounded-full border-2 border-background bg-muted-foreground shadow-[0_0_0_1px_var(--border)]" />
                   <h2
                     id={`timeline-date-${group.dateKey}`}
                     className="min-w-0 flex-1 text-sm font-semibold text-foreground"
@@ -630,6 +642,7 @@ export function PostFeed({
                           post={post}
                           imageUrls={postThumbnailUrlMap[post.id]}
                           onEdit={() => onPostEdit(post)}
+                          onCopy={onPostCopy}
                           onSaveMedia={onPostSaveMedia}
                           onTagClick={handleTagChange}
                           onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
@@ -668,7 +681,7 @@ export function PostFeed({
         />
       )}
       {latestPendingPost && (
-        <div className="fixed inset-x-0 bottom-24 z-50 mx-auto flex w-full max-w-md justify-center px-4 pointer-events-none">
+        <div className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-full max-w-md justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto flex w-full items-center justify-between gap-3 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white shadow-xl">
             <span className="min-w-0 truncate">1件削除しました</span>
             <button

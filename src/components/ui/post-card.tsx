@@ -13,6 +13,7 @@ type PostCardProps = {
   imageUrls?: string[];
   onClick?: () => void;
   onEdit?: () => void;
+  onCopy?: (post: Post, copied: boolean) => void;
   onTagClick?: (tag: string) => void;
   onTypeChange?: (nextType: PostType) => void;
   onOgpFetched?: (ogp: OgpPreview) => void;
@@ -24,6 +25,21 @@ type PostCardProps = {
 function formatTime(iso: string) {
   try {
     return new Intl.DateTimeFormat("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function formatDetailedDateTime(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
       hour: "2-digit",
       minute: "2-digit",
     }).format(new Date(iso));
@@ -59,7 +75,7 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
-function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTypeChange, onOgpFetched, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
+function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClick, onTypeChange, onOgpFetched, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -68,8 +84,21 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
   const [brokenImageUrls, setBrokenImageUrls] = useState<Set<string>>(() => new Set());
   const articleRef = useRef<HTMLElement>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+  const suppressNextOutsideClickRef = useRef(false);
+  const suppressResetTimerRef = useRef<number | null>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
+  const timelineMediaBleedClass = "-mx-4 -mt-4 mb-3";
+  const timelineMediaCornerClass = "rounded-t-[28px]";
+  const cardSurfaceClass = isDetail
+    ? "post-card-surface cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-muted-foreground/30 hover:shadow-md active:scale-[0.997]"
+    : "post-card-surface cursor-pointer overflow-hidden rounded-[28px] border border-border/80 bg-card px-4 pb-3 pt-4 shadow-[0_1px_0_rgba(255,255,255,0.03)] transition hover:border-muted-foreground/25 hover:bg-card/95";
+  const compactUrlButtonClass = isDetail
+    ? "w-full rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
+    : "w-full rounded-2xl border border-border/80 bg-muted/35 px-3 py-2.5 text-left transition-colors hover:bg-muted/55";
+  const compactOgpCardClass = isDetail
+    ? "mt-2 w-full rounded-lg border border-border bg-muted/30 overflow-hidden shadow-sm transition-colors hover:bg-muted/50 text-left"
+    : "mt-2 w-full overflow-hidden rounded-[22px] border border-border/80 bg-muted/25 text-left transition-colors hover:bg-muted/45";
 
   useEffect(() => {
     if (isDetail || shouldLoadImages || !imageUrls || imageUrls.length === 0) return;
@@ -117,16 +146,53 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
   }, [isDetail, post.ogp, post.url, shouldFetchOgp]);
 
   useEffect(() => {
+    const blockClickAfterClose = (event: MouseEvent) => {
+      if (!suppressNextOutsideClickRef.current) return;
+      if (actionMenuRef.current?.contains(event.target as Node)) return;
+
+      suppressNextOutsideClickRef.current = false;
+      if (suppressResetTimerRef.current !== null) {
+        window.clearTimeout(suppressResetTimerRef.current);
+        suppressResetTimerRef.current = null;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    document.addEventListener("click", blockClickAfterClose, true);
+    return () => {
+      document.removeEventListener("click", blockClickAfterClose, true);
+      if (suppressResetTimerRef.current !== null) {
+        window.clearTimeout(suppressResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isActionMenuOpen) return;
 
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (actionMenuRef.current?.contains(target)) return;
+    const closeBeforeBackgroundHandlesTap = (event: PointerEvent) => {
+      if (actionMenuRef.current?.contains(event.target as Node)) return;
+
+      suppressNextOutsideClickRef.current = true;
+      if (suppressResetTimerRef.current !== null) {
+        window.clearTimeout(suppressResetTimerRef.current);
+      }
+      suppressResetTimerRef.current = window.setTimeout(() => {
+        suppressNextOutsideClickRef.current = false;
+        suppressResetTimerRef.current = null;
+      }, 700);
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       setIsActionMenuOpen(false);
     };
 
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("pointerdown", closeBeforeBackgroundHandlesTap, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeBeforeBackgroundHandlesTap, true);
+    };
   }, [isActionMenuOpen]);
 
   // OGP情報を取得
@@ -158,7 +224,8 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsActionMenuOpen(false);
-    await copyTextToClipboard(post.body);
+    const copied = await copyTextToClipboard(post.body);
+    onCopy?.(post, copied);
   };
 
   const handleShare = (e: React.MouseEvent) => {
@@ -215,18 +282,18 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
   const getMediaStorageBadge = (index: number): { label: string; Icon: LucideIcon } => {
     const legacyImageCount = (post.imageBlobs?.length ?? 0) + (post.imageBlob ? 1 : 0);
     if (index < legacyImageCount) {
-      return { label: "旧形式保存", Icon: Database };
+      return { label: "保存済み", Icon: Database };
     }
 
     const mediaRef = post.mediaRefs?.[index - legacyImageCount];
     if (mediaRef?.storage === "device-reference") {
-      return { label: "元ファイル参照", Icon: LinkIcon };
+      return { label: "端末の画像を参照", Icon: LinkIcon };
     }
     if (mediaRef?.storage === "app-local-copy") {
       return { label: "アプリ内保存", Icon: Archive };
     }
 
-    return { label: "旧形式保存", Icon: Database };
+    return { label: "保存済み", Icon: Database };
   };
 
   const renderMediaStorageBadge = (index: number) => {
@@ -256,7 +323,9 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     const count = imageUrls.length;
     if (!shouldLoadImages) {
-      return <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] rounded-t-xl border-b border-border bg-black/5" />;
+      return isDetail
+        ? <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] rounded-t-xl border-b border-border bg-black/5" />
+        : <div data-card-media className={`${timelineMediaBleedClass} aspect-[4/3] ${timelineMediaCornerClass} bg-black/5`} />;
     }
 
     if (isDetail) {
@@ -284,7 +353,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count === 1) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} aspect-[4/3] overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {brokenImageUrls.has(imageUrls[0]) ? renderBrokenImage("h-full w-full") : (
             <img
               src={imageUrls[0]}
@@ -302,7 +376,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count === 2) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {imageUrls.map((url, i) => (
             brokenImageUrls.has(url)
               ? <div key={i}>{renderBrokenImage("h-full w-full")}</div>
@@ -314,7 +393,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count === 3) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {brokenImageUrls.has(imageUrls[0])
             ? renderBrokenImage("h-full w-full")
             : <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover cursor-pointer transition-opacity hover:opacity-90" onClick={(e) => handleImageClick(e, 0)} onError={() => markImageBroken(imageUrls[0])} />}
@@ -331,7 +415,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
     if (count >= 4) {
       return (
-        <div data-card-media className="-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5">
+        <div
+          data-card-media
+          className={isDetail
+            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
+            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+        >
           {imageUrls.slice(0, 4).map((url, i) => (
             brokenImageUrls.has(url)
               ? <div key={url}>{renderBrokenImage("h-full w-full")}</div>
@@ -349,24 +438,24 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
       <article
         ref={articleRef}
         onClick={onClick}
-        className="post-card-surface cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-muted-foreground/30 hover:shadow-md active:scale-[0.997]"
+        className={cardSurfaceClass}
       >
         {post.url && (
-          <div className="mb-4">
+          <div className={isDetail ? "mb-4" : "mb-3"}>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 window.open(post.url, "_blank", "noopener,noreferrer");
               }}
-              className="w-full rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
+              className={compactUrlButtonClass}
             >
               <div className="flex items-start gap-2">
-                <LinkIcon size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+                <LinkIcon size={isDetail ? 16 : 15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs text-primary">{post.url}</div>
+                  <div className={`${isDetail ? "text-xs" : "text-[13px]"} truncate text-primary`}>{post.url}</div>
                 </div>
-                <ExternalLink size={14} className="flex-shrink-0 text-muted-foreground mt-0.5" />
+                <ExternalLink size={isDetail ? 14 : 13} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
               </div>
             </button>
 
@@ -383,14 +472,14 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
                   e.stopPropagation();
                   window.open(post.url, "_blank", "noopener,noreferrer");
                 }}
-                className="mt-2 w-full rounded-lg border border-border bg-muted/30 overflow-hidden shadow-sm transition-colors hover:bg-muted/50 text-left"
+                className={compactOgpCardClass}
               >
                 {ogp.image && (
                   <div className="aspect-video w-full overflow-hidden bg-black/5">
                     <img src={ogp.image} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </div>
                 )}
-                <div className="p-3">
+                <div className={isDetail ? "p-3" : "px-3 py-2.5"}>
                   {ogp.siteName && (
                     <p className="text-xs text-muted-foreground mb-1">{ogp.siteName}</p>
                   )}
@@ -408,96 +497,111 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 
         {renderImages()}
 
-        <p className="mb-4 whitespace-pre-wrap break-words leading-relaxed text-foreground">
+        <p className={`${isDetail ? "mb-4 text-[17px]" : "mb-3 text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
           {renderBodyWithLinks(post.body)}
         </p>
 
-        <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <time className="shrink-0 text-sm text-muted-foreground">
-              {formatTime(post.updatedAt)}
+        <div className={`border-t border-border ${isDetail ? "pt-3.5" : "pt-2.5"}`}>
+          {isDetail && (
+            <time className="mb-3 block text-sm text-muted-foreground">
+              {formatDetailedDateTime(post.updatedAt)}
             </time>
-            {post.tags && post.tags.length > 0 && (
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
-                {post.tags.map((tag, index) => (
-                  <button
-                    type="button"
-                    key={index}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTagClick?.(tag);
-                    }}
-                    className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    title={`#${tag}で絞り込み`}
-                  >
-                    #{tag}
-                  </button>
-                ))}
-              </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {!isDetail && (
+                <time className="shrink-0 text-[15px] text-muted-foreground">
+                  {formatTime(post.updatedAt)}
+                </time>
+              )}
+              {post.tags && post.tags.length > 0 && (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
+                  {post.tags.map((tag, index) => (
+                    <button
+                      type="button"
+                      data-swipe-start
+                      key={index}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTagClick?.(tag);
+                      }}
+                      className={`shrink-0 rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isDetail ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-[11px]"}`}
+                      title={`#${tag}で絞り込み`}
+                    >
+                      #{tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {!isDetail && !post.tags?.length && (
+              <time className="shrink-0 text-[15px] text-muted-foreground">
+                {formatTime(post.updatedAt)}
+              </time>
             )}
-          </div>
-          <div ref={actionMenuRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsActionMenuOpen((current) => !current);
-              }}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-              title="操作メニュー"
-              aria-label="操作メニュー"
-              aria-expanded={isActionMenuOpen}
-            >
-              <MoreHorizontal size={18} />
-            </button>
-            {isActionMenuOpen && (
-              <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
-                {hasMedia && onSaveMedia && (
-                  <button
-                    type="button"
-                    onClick={handleSaveMedia}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  >
-                    <Download size={15} />
-                    <span>端末に保存</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <Copy size={15} />
-                  <span>コピー</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <Share size={15} />
-                  <span>Xへ投稿</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleEdit}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <Edit3 size={15} />
-                  <span>編集</span>
-                </button>
-                {movableType && onTypeChange && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleMoveType(e, movableType)}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  >
-                    <ArrowRightLeft size={15} />
-                    <span>{moveLabel}</span>
-                  </button>
-                )}
-              </div>
-            )}
+            <div ref={actionMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsActionMenuOpen((current) => !current);
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
+                title="操作メニュー"
+                aria-label="操作メニュー"
+                aria-expanded={isActionMenuOpen}
+              >
+                <MoreHorizontal size={18} />
+              </button>
+              {isActionMenuOpen && (
+                  <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
+                    {hasMedia && onSaveMedia && (
+                      <button
+                        type="button"
+                        onClick={handleSaveMedia}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      >
+                        <Download size={15} />
+                        <span>端末に保存</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <Copy size={15} />
+                      <span>コピー</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShare}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <Share size={15} />
+                      <span>Xへ投稿</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEdit}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <Edit3 size={15} />
+                      <span>編集</span>
+                    </button>
+                    {movableType && onTypeChange && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleMoveType(e, movableType)}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      >
+                        <ArrowRightLeft size={15} />
+                        <span>{moveLabel}</span>
+                      </button>
+                    )}
+                  </div>
+              )}
+            </div>
           </div>
         </div>
       </article>
@@ -508,6 +612,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onTagClick, onTyp
 export const PostCard = memo(PostCardComponent, (prev, next) => (
   prev.post === next.post
   && prev.imageUrls === next.imageUrls
+  && prev.onCopy === next.onCopy
   && prev.onImageOpen === next.onImageOpen
   && prev.onSaveMedia === next.onSaveMedia
   && prev.isDetail === next.isDetail

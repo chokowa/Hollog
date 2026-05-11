@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, EyeOff, Moon, Monitor, Sun, Tags } from "lucide-react";
+import { ArrowLeft, EyeOff, Moon, Monitor, Sparkles, Sun, Tags } from "lucide-react";
 import type { ThemeMode } from "@/hooks/use-theme";
 import { AppButton } from "@/components/ui/app-button";
 
@@ -11,6 +11,8 @@ type SettingsViewProps = {
   onThemeChange: (mode: ThemeMode) => void;
   hidePostedInSourceTabs: boolean;
   onHidePostedInSourceTabsChange: (hidden: boolean) => void;
+  systemTaggingEnabled: boolean;
+  onSystemTaggingEnabledChange: (enabled: boolean) => void;
   existingTags: string[];
 };
 
@@ -21,6 +23,8 @@ export function SettingsView({
   onThemeChange,
   hidePostedInSourceTabs,
   onHidePostedInSourceTabsChange,
+  systemTaggingEnabled,
+  onSystemTaggingEnabledChange,
   existingTags,
 }: SettingsViewProps) {
   return (
@@ -40,19 +44,39 @@ export function SettingsView({
         <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div className="flex items-center gap-2 border-b border-border px-5 py-4">
             <Tags size={18} className="text-primary" />
-            <h2 className="font-medium text-foreground">タグ整理</h2>
+            <h2 className="font-medium text-foreground">タグ管理</h2>
           </div>
           <div className="p-5">
             <p className="mb-4 text-sm text-muted-foreground">
               タグ候補の管理と、複数投稿への一括タグ付けを専用画面で行います。
             </p>
             <div className="mb-4 rounded-xl border border-border bg-secondary px-4 py-3">
-              <p className="text-sm font-medium text-foreground">現在の使用タグ</p>
+              <p className="text-sm font-medium text-foreground">使用中のタグ</p>
               <p className="mt-1 text-xs text-muted-foreground">{existingTags.length}件</p>
             </div>
             <AppButton block onClick={onOpenTagManager}>
-              タグ整理を開く
+              タグ管理を開く
             </AppButton>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+            <Sparkles size={18} className="text-primary" />
+            <h2 className="font-medium text-foreground">自動タグ</h2>
+          </div>
+          <div className="p-5">
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border p-4 transition-colors hover:bg-muted/30">
+              <span className="text-sm font-medium text-foreground">
+                サービス名タグを自動で付ける
+              </span>
+              <input
+                type="checkbox"
+                checked={systemTaggingEnabled}
+                onChange={(event) => onSystemTaggingEnabledChange(event.target.checked)}
+                className="bocchi-checkbox h-5 w-5"
+              />
+            </label>
           </div>
         </section>
 
@@ -64,7 +88,7 @@ export function SettingsView({
           <div className="p-5">
             <label className="flex items-center justify-between gap-4 rounded-xl border border-border p-4 transition-colors hover:bg-muted/30">
               <span className="text-sm font-medium text-foreground">
-                投稿済みのカードはポストとクリップタブから見えなくする
+                投稿済みをポスト/クリップに表示しない
               </span>
               <input
                 type="checkbox"

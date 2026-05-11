@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
+import { normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { postsRepository } from "@/lib/postsRepository";
 import { uniqueTags } from "@/lib/tag-suggestions";
-import type { OgpPreview, Post, PostMediaRef, PostRecordInput, TimelineFilter } from "@/types/post";
+import type { OgpPreview, Post, PostMediaOrderItem, PostMediaRef, PostRecordInput, TimelineFilter } from "@/types/post";
 
 const HIDE_POSTED_IN_SOURCE_TABS_KEY = "bocchisns_hide_posted_in_source_tabs";
+const POST_SYNC_EVENT_KEY = "bocchisns_post_sync_event";
+const POST_SYNC_CHANNEL_NAME = "bocchisns_post_sync";
 
 export type PostFormValue = {
   type: Post["type"];
@@ -17,13 +21,26 @@ export type PostFormValue = {
   ogp?: OgpPreview;
   tagsText: string;
   imageBlobs?: Blob[];
+  imageBlobIds?: string[];
   mediaRefs?: PostMediaRef[];
+  mediaOrder?: PostMediaOrderItem[];
   thumbnailBlobs?: Blob[];
 };
 
 export type AvailableTag = {
   name: string;
   count: number;
+};
+
+type CreatePostOptions = {
+  commit?: "default" | "sync";
+};
+
+type PostSyncEvent = {
+  kind: "created";
+  postId: string;
+  sourceInstanceId: string;
+  createdAt: string;
 };
 
 const emptyForm: PostFormValue = {
@@ -38,6 +55,14 @@ const postImageUrlListCache = new Map<string, { key: string; urls: string[] }>()
 const postThumbnailUrlListCache = new Map<string, { key: string; urls: string[] }>();
 
 function toRecordInput(value: PostFormValue): PostRecordInput {
+  const imageBlobIds = normalizeImageBlobIds(value.imageBlobs, value.imageBlobIds);
+  const mediaOrder = normalizeMediaOrder({
+    imageBlobs: value.imageBlobs,
+    imageBlobIds,
+    mediaRefs: value.mediaRefs,
+    mediaOrder: value.mediaOrder,
+  });
+
   return {
     type: value.type,
     postedFrom: value.postedFrom,
@@ -45,7 +70,9 @@ function toRecordInput(value: PostFormValue): PostRecordInput {
     url: value.url.trim() || undefined,
     ogp: value.url.trim() ? value.ogp : undefined,
     imageBlobs: value.imageBlobs,
+    imageBlobIds,
     mediaRefs: value.mediaRefs,
+    mediaOrder,
     thumbnailBlobs: value.thumbnailBlobs,
     tags: value.tagsText
       .split(",")
@@ -60,6 +87,19 @@ function getOriginalImageBlobs(post: Pick<Post, "imageBlobs" | "imageBlob">) {
 
 function getMediaRefs(post: Pick<Post, "mediaRefs">) {
   return post.mediaRefs ?? [];
+}
+
+function getImageBlobIds(post: Pick<Post, "imageBlobs" | "imageBlob" | "imageBlobIds">) {
+  return normalizeImageBlobIds(getOriginalImageBlobs(post), post.imageBlobIds) ?? [];
+}
+
+function getMediaOrder(post: Pick<Post, "imageBlobs" | "imageBlob" | "imageBlobIds" | "mediaRefs" | "mediaOrder">) {
+  return normalizeMediaOrder({
+    imageBlobs: getOriginalImageBlobs(post),
+    imageBlobIds: getImageBlobIds(post),
+    mediaRefs: getMediaRefs(post),
+    mediaOrder: post.mediaOrder,
+  }) ?? [];
 }
 
 function getMediaCount(post: Pick<Post, "imageBlobs" | "imageBlob" | "mediaRefs">) {
@@ -117,8 +157,8 @@ function buildPostUrlMap(
   posts.forEach((post) => {
     const blobs = getBlobs(post);
     const shouldIncludeRefs = typeof includeMediaRefs === "function" ? includeMediaRefs(post) : includeMediaRefs;
-    const refUrls = shouldIncludeRefs ? getMediaRefs(post).map(mediaRefToUrl) : [];
-    if (blobs.length === 0 && refUrls.length === 0) {
+    const mediaRefs = getMediaRefs(post);
+    if (blobs.length === 0 && (!shouldIncludeRefs || mediaRefs.length === 0)) {
       return;
     }
 
@@ -130,7 +170,23 @@ function buildPostUrlMap(
       blobUrlCache.set(blob, nextUrl);
       return nextUrl;
     });
-    const allUrls = [...nextUrls, ...refUrls];
+    const blobIdList = getBlobs === getThumbnailImageBlobs && hasCompleteThumbnailSet(post) && mediaRefs.length === 0
+      ? getImageBlobIds(post)
+      : getImageBlobIds(post);
+    const blobUrlMap = new Map(blobIdList.map((id, index) => [id, nextUrls[index]]));
+    const refUrlMap = new Map(mediaRefs.map((mediaRef) => [mediaRef.id, mediaRefToUrl(mediaRef)]));
+    const orderedUrls = getMediaOrder(post).flatMap((item) => {
+      if (item.source === "imageBlob") {
+        const url = blobUrlMap.get(item.id);
+        return url ? [url] : [];
+      }
+      if (!shouldIncludeRefs) {
+        return [];
+      }
+      const url = refUrlMap.get(item.id);
+      return url ? [url] : [];
+    });
+    const allUrls = orderedUrls.length > 0 ? orderedUrls : [...nextUrls, ...(shouldIncludeRefs ? mediaRefs.map(mediaRefToUrl) : [])];
     const cacheKey = allUrls.join("\n");
     const cachedList = listCache.get(post.id);
 
@@ -154,7 +210,9 @@ function fromPost(post: Post): PostFormValue {
     ogp: post.ogp,
     tagsText: post.tags.join(", "),
     imageBlobs: getOriginalImageBlobs(post),
+    imageBlobIds: getImageBlobIds(post),
     mediaRefs: getMediaRefs(post),
+    mediaOrder: getMediaOrder(post),
     thumbnailBlobs: post.thumbnailBlobs,
   };
 }
@@ -176,18 +234,106 @@ export function usePosts() {
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isBooting, setIsBooting] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
+  const loadPostsRequestIdRef = useRef(0);
+  const latestAppliedRequestIdRef = useRef(0);
+  const postsMutationVersionRef = useRef(0);
+  const instanceIdRef = useRef<string | null>(null);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
+
+  const getInstanceId = useCallback(() => {
+    instanceIdRef.current ??= `posts-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    return instanceIdRef.current;
+  }, []);
+
+  const applyCreatedPostFromAnotherInstance = useCallback(async (event: PostSyncEvent) => {
+    if (event.sourceInstanceId === getInstanceId()) return;
+
+    try {
+      const created = await postsRepository.getById(event.postId);
+      if (!created) return;
+
+      postsMutationVersionRef.current += 1;
+      setPosts((prev) => {
+        const withoutDuplicate = prev.filter((post) => post.id !== created.id);
+        return [created, ...withoutDuplicate];
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync post");
+    }
+  }, [getInstanceId]);
+
+  const broadcastCreatedPost = useCallback((postId: string) => {
+    if (typeof window === "undefined") return;
+
+    const event: PostSyncEvent = {
+      kind: "created",
+      postId,
+      sourceInstanceId: getInstanceId(),
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      syncChannelRef.current?.postMessage(event);
+    } catch {}
+
+    try {
+      localStorage.setItem(POST_SYNC_EVENT_KEY, JSON.stringify(event));
+    } catch {}
+  }, [getInstanceId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleSyncEvent = (event: PostSyncEvent) => {
+      if (event.kind === "created") {
+        void applyCreatedPostFromAnotherInstance(event);
+      }
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== POST_SYNC_EVENT_KEY || !event.newValue) return;
+      try {
+        handleSyncEvent(JSON.parse(event.newValue) as PostSyncEvent);
+      } catch {}
+    };
+
+    let channel: BroadcastChannel | null = null;
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel(POST_SYNC_CHANNEL_NAME);
+      channel.onmessage = (event: MessageEvent<PostSyncEvent>) => handleSyncEvent(event.data);
+      syncChannelRef.current = channel;
+    }
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      if (syncChannelRef.current === channel) {
+        syncChannelRef.current = null;
+      }
+      channel?.close();
+    };
+  }, [applyCreatedPostFromAnotherInstance]);
 
   // 投稿リストの読み込み
   const loadPosts = useCallback(async () => {
+    const requestId = ++loadPostsRequestIdRef.current;
+    const mutationVersionAtStart = postsMutationVersionRef.current;
     setError("");
     setIsBusy(true);
     try {
       const nextPosts = await postsRepository.list();
-      setPosts(nextPosts);
+      const isLatestRequest = requestId >= latestAppliedRequestIdRef.current;
+      const hasConcurrentMutation = postsMutationVersionRef.current !== mutationVersionAtStart;
+
+      if (isLatestRequest && !hasConcurrentMutation) {
+        latestAppliedRequestIdRef.current = requestId;
+        setPosts(nextPosts);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load posts");
     } finally {
-      setIsBusy(false);
+      if (requestId === loadPostsRequestIdRef.current) {
+        setIsBusy(false);
+      }
       setIsBooting(false);
     }
   }, []);
@@ -312,7 +458,7 @@ export function usePosts() {
   }, []);
 
   // 操作ハンドラー
-  const createPost = async (value: PostFormValue) => {
+  const createPost = async (value: PostFormValue, options: CreatePostOptions = {}) => {
     setIsBusy(true);
     try {
       const recordInput = toRecordInput(value);
@@ -324,8 +470,17 @@ export function usePosts() {
           ?? (imageBlobs.length > 0 && mediaRefs.length === 0 ? await createThumbnailBlobs(imageBlobs) : undefined),
         source: "manual",
       });
-      setPosts((prev) => [created, ...prev]);
-      setStatusMessage("投稿を保存しました。");
+      const commitCreatedPost = () => {
+        postsMutationVersionRef.current += 1;
+        setPosts((prev) => [created, ...prev]);
+        setStatusMessage("投稿を保存しました。");
+      };
+      if (options.commit === "sync") {
+        flushSync(commitCreatedPost);
+      } else {
+        commitCreatedPost();
+      }
+      broadcastCreatedPost(created.id);
       return created;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create post");
@@ -361,6 +516,7 @@ export function usePosts() {
             : currentPost?.thumbnailBlobs),
         source,
       });
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === id ? updated : p)));
       setStatusMessage("投稿を更新しました。");
       return updated;
@@ -388,6 +544,7 @@ export function usePosts() {
         },
         { touchUpdatedAt: false },
       );
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
       setStatusMessage(nextType === "posted" ? "投稿済みにしました。" : "未投稿に戻しました。");
       return updated;
@@ -403,6 +560,7 @@ export function usePosts() {
     if (!post.url) return null;
     try {
       const updated = await postsRepository.updateOgp(post.id, ogp);
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
       return updated;
     } catch (err) {
@@ -415,6 +573,7 @@ export function usePosts() {
     setIsBusy(true);
     try {
       await postsRepository.delete(id);
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.filter((p) => p.id !== id));
       setStatusMessage("投稿を削除しました。");
       return true;
@@ -457,6 +616,7 @@ export function usePosts() {
       }));
 
       const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
+      postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((post) => updatedById.get(post.id) ?? post));
       setStatusMessage(`${updatedPosts.length}件の投稿にタグを適用しました。`);
       return updatedPosts;

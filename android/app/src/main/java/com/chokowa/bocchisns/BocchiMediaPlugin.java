@@ -1,8 +1,11 @@
 package com.chokowa.bocchisns;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -93,6 +96,33 @@ public class BocchiMediaPlugin extends Plugin {
         call.resolve(response);
     }
 
+    @PluginMethod
+    public void readClipboardImages(PluginCall call) {
+        int limit = Math.max(1, Math.min(call.getInt("limit", 4), 4));
+        JSArray items = new JSArray();
+
+        try {
+            ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clipData = clipboard == null ? null : clipboard.getPrimaryClip();
+            if (clipData != null) {
+                int count = Math.min(clipData.getItemCount(), limit);
+                for (int index = 0; index < count; index++) {
+                    ClipData.Item clipItem = clipData.getItemAt(index);
+                    Uri uri = clipItem.getUri();
+                    if (uri == null && clipItem.getIntent() != null) {
+                        uri = clipItem.getIntent().getData();
+                    }
+                    addClipboardImage(items, uri, index);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        JSObject response = new JSObject();
+        response.put("items", items);
+        call.resolve(response);
+    }
+
     private void addPickedImage(JSArray items, Uri uri, int index) {
         if (uri == null) return;
         try {
@@ -120,6 +150,51 @@ public class BocchiMediaPlugin extends Plugin {
             items.put(item);
         } catch (Exception ignored) {
         }
+    }
+
+    private void addClipboardImage(JSArray items, Uri uri, int index) {
+        if (uri == null) return;
+        try {
+            String mimeType = getContext().getContentResolver().getType(uri);
+            if (mimeType == null || !mimeType.startsWith("image/")) {
+                return;
+            }
+
+            File imageFile = copyImageToAppStorage(uri, mimeType, index + 1);
+            JSObject item = new JSObject();
+            item.put("id", "clipboard-media-" + System.currentTimeMillis() + "-" + (index + 1));
+            item.put("kind", "image");
+            item.put("storage", "app-local-copy");
+            item.put("uri", Uri.fromFile(imageFile).toString());
+            item.put("name", imageFile.getName());
+            item.put("mimeType", mimeType);
+            String previewDataUrl = createPreviewDataUrl(Uri.fromFile(imageFile));
+            if (previewDataUrl != null) {
+                item.put("previewDataUrl", previewDataUrl);
+            }
+            items.put(item);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private File copyImageToAppStorage(Uri uri, String mimeType, int imageNumber) throws Exception {
+        File shareDir = new File(getContext().getFilesDir(), "clipboard-media");
+        if (!shareDir.exists() && !shareDir.mkdirs()) {
+            throw new Exception("Unable to create clipboard media storage");
+        }
+
+        File imageFile = new File(shareDir, "clipboard-image-" + System.currentTimeMillis() + "-" + imageNumber + getImageExtension(mimeType));
+        try (InputStream input = getContext().getContentResolver().openInputStream(uri);
+             OutputStream output = new java.io.FileOutputStream(imageFile)) {
+            if (input == null) throw new Exception("Unable to open clipboard image");
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+        }
+
+        return imageFile;
     }
 
     private String getDisplayName(Uri uri, int imageNumber, String mimeType) {

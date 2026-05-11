@@ -13,12 +13,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Bocchi SNS",
-  description: "Local-first personal SNS home screen powered by Next.js and IndexedDB",
+  title: "Hollog",
+  description: "Local-first personal timeline for notes, clips, and saved media",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "Bocchi SNS",
+    title: "Hollog",
     statusBarStyle: "default",
   },
   formatDetection: {

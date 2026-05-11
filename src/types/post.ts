@@ -13,6 +13,11 @@ export type PostMediaRef = {
   name?: string;
 };
 
+export type PostMediaOrderItem = {
+  source: "imageBlob" | "mediaRef";
+  id: string;
+};
+
 export type OgpPreview = {
   title?: string | null;
   description?: string | null;
@@ -29,8 +34,10 @@ export type Post = {
   ogp?: OgpPreview;
   imageBlob?: Blob;
   imageBlobs?: Blob[];
+  imageBlobIds?: string[];
   thumbnailBlobs?: Blob[];
   mediaRefs?: PostMediaRef[];
+  mediaOrder?: PostMediaOrderItem[];
   tags: string[];
   source: PostSource;
   createdAt: string;

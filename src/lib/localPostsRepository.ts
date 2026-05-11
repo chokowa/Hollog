@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
+import { normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { samplePosts } from "@/lib/sample-posts";
 import type { PostsRepository } from "@/lib/postsRepository";
 import type { Post } from "@/types/post";
@@ -81,6 +82,15 @@ function normalizePost(rawPost: LegacyPost): Post {
         : rawPost.status === "ready_to_post" || rawPost.source === "x"
           ? "posted"
           : "clip";
+  const imageBlobs = Array.isArray(rawPost.imageBlobs) ? rawPost.imageBlobs : (rawPost.imageBlob ? [rawPost.imageBlob] : []);
+  const mediaRefs = Array.isArray(rawPost.mediaRefs) ? rawPost.mediaRefs : undefined;
+  const imageBlobIds = normalizeImageBlobIds(imageBlobs, rawPost.imageBlobIds);
+  const mediaOrder = normalizeMediaOrder({
+    imageBlobs,
+    imageBlobIds,
+    mediaRefs,
+    mediaOrder: rawPost.mediaOrder,
+  });
 
   return {
     id: rawPost.id ?? createPostId(),
@@ -90,9 +100,11 @@ function normalizePost(rawPost: LegacyPost): Post {
     url: rawPost.url ?? undefined,
     ogp: rawPost.ogp,
     imageBlob: rawPost.imageBlob,
-    imageBlobs: Array.isArray(rawPost.imageBlobs) ? rawPost.imageBlobs : (rawPost.imageBlob ? [rawPost.imageBlob] : []),
+    imageBlobs,
+    imageBlobIds,
     thumbnailBlobs: Array.isArray(rawPost.thumbnailBlobs) ? rawPost.thumbnailBlobs : undefined,
-    mediaRefs: Array.isArray(rawPost.mediaRefs) ? rawPost.mediaRefs : undefined,
+    mediaRefs,
+    mediaOrder,
     tags: Array.isArray(rawPost.tags) ? rawPost.tags : [],
     source: rawPost.source ?? "manual",
     createdAt: rawPost.createdAt ?? new Date().toISOString(),
