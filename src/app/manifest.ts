@@ -4,9 +4,9 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Bocchi SNS",
-    short_name: "BocchiSNS",
-    description: "Local-first personal SNS for private notes, clips, and X handoff",
+    name: "Hollog",
+    short_name: "Hollog",
+    description: "Local-first personal timeline for notes, clips, and saved media",
     start_url: "/",
     scope: "/",
     display: "standalone",

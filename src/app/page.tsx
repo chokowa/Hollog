@@ -7,7 +7,7 @@ import { usePosts } from "@/hooks/use-posts";
 import { AppHeader } from "@/components/app-header";
 import { PostFeed } from "@/components/post-feed";
 import { BottomNav } from "@/components/bottom-nav";
-import { CalendarView } from "@/components/calendar-view";
+import { CalendarView, type CalendarFilter } from "@/components/calendar-view";
 import { ComposerModal } from "@/components/composer-modal";
 import { PostDetail } from "@/components/post-detail";
 import { ShareImport } from "@/components/share-import";
@@ -90,6 +90,17 @@ type PendingShareImport = {
 
 type AppToast = {
   message: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+};
+
+type CalendarState = {
+  selectedDateKey: string | null;
+  visibleMonthKey: string | null;
+  activeFilter: CalendarFilter;
+  activeTags: string[];
 };
 
 function dataUrlToBlob(dataUrl: string, fallbackType: string) {
@@ -253,7 +264,14 @@ export default function Home() {
   const [shareDraftThumbnailBlobs, setShareDraftThumbnailBlobs] = useState<Blob[] | undefined>();
   const [imageError, setImageError] = useState<string>("");
   const [toast, setToast] = useState<AppToast | null>(null);
+  const [isQuickPosting, setIsQuickPosting] = useState(false);
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
+  const [calendarState, setCalendarState] = useState<CalendarState>({
+    selectedDateKey: null,
+    visibleMonthKey: null,
+    activeFilter: "all",
+    activeTags: [],
+  });
   const activeViewRef = useRef<ActiveView>("home");
   const selectedPostIdRef = useRef<string | null>(null);
   const activeTagRef = useRef<string | null>(null);
@@ -265,16 +283,18 @@ export default function Home() {
   const scrollFrameRef = useRef<number | null>(null);
   const scrollChromeTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const quickImageInputRef = useRef<HTMLInputElement | null>(null);
+  const quickCameraInputRef = useRef<HTMLInputElement | null>(null);
   const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
   const nativeShareDedupRef = useRef<{ key: string; receivedAt: number } | null>(null);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
-  const showToast = useCallback((message: string) => {
+  const showToast = useCallback((message: string, action?: AppToast["action"]) => {
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
     }
-    setToast({ message });
+    setToast({ message, action });
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
@@ -399,13 +419,16 @@ export default function Home() {
     clearPendingShare();
     replaceHistoryState({ bocchiSns: true, view: "home", activeTag: null });
     applyHistoryState({ bocchiSns: true, view: "home", activeTag: null });
+    setTimelineChromeHidden(false);
+    scrollViewportToTop("auto");
+    window.dispatchEvent(new Event("bocchi:timeline-top"));
 
     if (Capacitor.isNativePlatform() && returnToSource) {
       window.setTimeout(() => {
         void CapacitorApp.minimizeApp();
       }, 120);
     }
-  }, [applyHistoryState, clearPendingShare, replaceHistoryState]);
+  }, [applyHistoryState, clearPendingShare, replaceHistoryState, scrollViewportToTop, setTimelineChromeHidden]);
 
   const resetToCalendar = useCallback(() => {
     moveToHistoryState({ bocchiSns: true, view: "calendar" });
@@ -676,7 +699,22 @@ export default function Home() {
 
   const replaceToHome = useCallback(() => {
     resetToHome(null);
-  }, [resetToHome]);
+    setTimelineChromeHidden(false);
+    scrollViewportToTop("auto");
+    window.dispatchEvent(new Event("bocchi:timeline-top"));
+  }, [resetToHome, scrollViewportToTop, setTimelineChromeHidden]);
+
+  const showQuickPostToast = useCallback((post: Post | null, message: string) => {
+    if (!post) {
+      showToast("投稿できませんでした。");
+      return;
+    }
+
+    showToast(message, {
+      label: "編集",
+      onClick: () => openEditComposer(post),
+    });
+  }, [openEditComposer, showToast]);
 
   const setSystemTaggingEnabled = useCallback((enabled: boolean) => {
     setSystemTaggingEnabledState(writeSystemTaggingEnabled(enabled));
@@ -730,6 +768,136 @@ export default function Home() {
       });
     }
   }, []);
+
+  const createQuickImagePostFromFiles = useCallback(async (files: File[]) => {
+    if (isQuickPosting) return;
+
+    let currentError = "";
+    const validFiles: File[] = [];
+    for (const file of files.slice(0, 4)) {
+      const error = validateImageFile(file);
+      if (error) {
+        currentError = error;
+        break;
+      }
+      validFiles.push(file);
+    }
+
+    if (currentError) {
+      showToast(currentError);
+      return;
+    }
+    if (validFiles.length === 0) {
+      showToast("画像が選択されませんでした。");
+      return;
+    }
+
+    setIsQuickPosting(true);
+    try {
+      const imageBlobIds = validFiles.map(() => createImageBlobId());
+      const thumbnailBlobs = await createThumbnailBlobs(validFiles);
+      const created = await createPost({
+        ...emptyForm,
+        type: "post",
+        imageBlobs: validFiles,
+        imageBlobIds,
+        mediaOrder: normalizeMediaOrder({
+          imageBlobs: validFiles,
+          imageBlobIds,
+          mediaOrder: imageBlobIds.map((id) => ({ source: "imageBlob" as const, id })),
+        }),
+        thumbnailBlobs,
+      });
+      showQuickPostToast(created, "画像を投稿しました。");
+      if (created) replaceToHome();
+    } finally {
+      setIsQuickPosting(false);
+    }
+  }, [createPost, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
+
+  const createQuickImagePostFromNativeItems = useCallback(async (items: NativePickedMedia[], source: string) => {
+    if (isQuickPosting) return;
+    if (items.length === 0) {
+      showToast(source === "clipboard" ? "クリップボードに画像が見つかりませんでした。" : "画像が選択されませんでした。");
+      return;
+    }
+
+    setIsQuickPosting(true);
+    try {
+      const mediaRefs = nativeMediaToRefs(items.slice(0, 4), source);
+      const thumbnailBlobs = await nativePreviewBlobsToThumbnails(items.slice(0, 4));
+      const created = await createPost({
+        ...emptyForm,
+        type: "post",
+        mediaRefs,
+        mediaOrder: normalizeMediaOrder({
+          mediaRefs,
+          mediaOrder: mediaRefs.map((mediaRef) => ({ source: "mediaRef" as const, id: mediaRef.id })),
+        }),
+        thumbnailBlobs,
+      });
+      showQuickPostToast(created, "画像を投稿しました。");
+      if (created) replaceToHome();
+    } finally {
+      setIsQuickPosting(false);
+    }
+  }, [createPost, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
+
+  const handleQuickImagePost = useCallback(async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await pickNativeImages(4);
+        await createQuickImagePostFromNativeItems(result.items ?? [], "quick-picked");
+      } catch {
+        showToast("画像を選択できませんでした。");
+      }
+      return;
+    }
+
+    quickImageInputRef.current?.click();
+  }, [createQuickImagePostFromNativeItems, showToast]);
+
+  const handleQuickCameraPost = useCallback(() => {
+    quickCameraInputRef.current?.click();
+  }, []);
+
+  const handleQuickClipboardPost = useCallback(async () => {
+    if (isQuickPosting) return;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await readNativeClipboardImages(4);
+        if (result.items?.length) {
+          await createQuickImagePostFromNativeItems(result.items, "clipboard");
+          return;
+        }
+      } catch {
+        // 画像ではないクリップボードなら、続けてURLとして読みにいく。
+      }
+    }
+
+    try {
+      const clipboardText = await navigator.clipboard?.readText?.();
+      const url = extractSharedUrl(clipboardText ?? "");
+      if (!url) {
+        showToast("クリップボードに画像またはURLが見つかりませんでした。");
+        return;
+      }
+
+      setIsQuickPosting(true);
+      const created = await createPost({
+        ...emptyForm,
+        type: "clip",
+        url,
+      });
+      showQuickPostToast(created, "リンクをクリップしました。");
+      if (created) replaceToHome();
+    } catch {
+      showToast("クリップボードを読み込めませんでした。");
+    } finally {
+      setIsQuickPosting(false);
+    }
+  }, [createPost, createQuickImagePostFromNativeItems, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
 
   const addNativeItemsToComposer = useCallback(async (items: NativePickedMedia[], source: string) => {
     if (items.length === 0) {
@@ -1000,8 +1168,24 @@ export default function Home() {
   ) : null;
   const toastElement = toast ? (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex justify-center px-4">
-      <div className="max-w-md rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-xl">
-        {toast.message}
+      <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-xl">
+        <span>{toast.message}</span>
+        {toast.action && (
+          <button
+            type="button"
+            className="rounded-full border border-background/35 px-3 py-1 text-xs font-bold text-background active:scale-95"
+            onClick={() => {
+              setToast(null);
+              if (toastTimerRef.current) {
+                window.clearTimeout(toastTimerRef.current);
+                toastTimerRef.current = null;
+              }
+              toast.action?.onClick();
+            }}
+          >
+            {toast.action.label}
+          </button>
+        )}
       </div>
     </div>
   ) : null;
@@ -1201,8 +1385,15 @@ export default function Home() {
           postThumbnailUrlMap={postThumbnailUrlMap}
           onPostClick={openPostDetail}
           onPostEdit={openEditComposer}
-          onTagClick={(tag) => {
-            resetToHome(tag);
+          persistedSelectedDateKey={calendarState.selectedDateKey}
+          persistedVisibleMonthKey={calendarState.visibleMonthKey}
+          persistedActiveFilter={calendarState.activeFilter}
+          persistedActiveTags={calendarState.activeTags}
+          onCalendarStateChange={(nextState) => {
+            setCalendarState((current) => ({ ...current, ...nextState }));
+          }}
+          onCalendarFilterChange={(nextFilterState) => {
+            setCalendarState((current) => ({ ...current, ...nextFilterState }));
           }}
         />
       )}
@@ -1233,6 +1424,32 @@ export default function Home() {
         }}
         onPostClick={openNewComposer}
         onHomeClick={requestTimelineTop}
+        onQuickImagePost={handleQuickImagePost}
+        onQuickCameraPost={handleQuickCameraPost}
+        onQuickClipboardPost={handleQuickClipboardPost}
+      />
+
+      <input
+        ref={quickImageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []));
+          event.target.value = "";
+        }}
+      />
+      <input
+        ref={quickCameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => {
+          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []));
+          event.target.value = "";
+        }}
       />
 
       <ComposerModal

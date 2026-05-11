@@ -140,7 +140,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     startedOnMediaRef.current = Boolean(target.closest("[data-card-media], img"));
-    if (target.closest("button, a, input, textarea, select") || startedOnMediaRef.current) return;
+    if (target.closest("button:not([data-swipe-start]), a, input, textarea, select") || startedOnMediaRef.current) return;
 
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -226,6 +226,15 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     onOpen();
   };
 
+  const handleClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClickRef.current && offsetX === 0) return;
+
+    suppressNextClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+    setOffsetX(0);
+  };
+
   return (
     <div className="relative overflow-hidden rounded-xl">
       <div className="absolute inset-y-0 right-4 flex items-center">
@@ -240,6 +249,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
         onPointerMove={handlePointerMove}
         onPointerUp={finishSwipe}
         onPointerCancel={finishSwipe}
+        onClickCapture={handleClickCapture}
         onClick={handleClick}
       >
         {children}
@@ -477,7 +487,7 @@ export function PostFeed({
         className="timeline-top-chrome sticky top-0 z-20 transform-gpu bg-background will-change-transform transition-transform duration-[260ms] ease-out"
       >
         {header}
-        <div className="px-3 py-2 sm:px-4">
+        <div className="px-3 pb-2 pt-1 sm:px-4">
           <TabSwitcher
             tabs={timelineTabs}
             value={activeTab}

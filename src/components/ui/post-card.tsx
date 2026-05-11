@@ -84,6 +84,8 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
   const [brokenImageUrls, setBrokenImageUrls] = useState<Set<string>>(() => new Set());
   const articleRef = useRef<HTMLElement>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+  const suppressNextOutsideClickRef = useRef(false);
+  const suppressResetTimerRef = useRef<number | null>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
   const timelineMediaBleedClass = "-mx-4 -mt-4 mb-3";
@@ -144,16 +146,53 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
   }, [isDetail, post.ogp, post.url, shouldFetchOgp]);
 
   useEffect(() => {
+    const blockClickAfterClose = (event: MouseEvent) => {
+      if (!suppressNextOutsideClickRef.current) return;
+      if (actionMenuRef.current?.contains(event.target as Node)) return;
+
+      suppressNextOutsideClickRef.current = false;
+      if (suppressResetTimerRef.current !== null) {
+        window.clearTimeout(suppressResetTimerRef.current);
+        suppressResetTimerRef.current = null;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    document.addEventListener("click", blockClickAfterClose, true);
+    return () => {
+      document.removeEventListener("click", blockClickAfterClose, true);
+      if (suppressResetTimerRef.current !== null) {
+        window.clearTimeout(suppressResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isActionMenuOpen) return;
 
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (actionMenuRef.current?.contains(target)) return;
+    const closeBeforeBackgroundHandlesTap = (event: PointerEvent) => {
+      if (actionMenuRef.current?.contains(event.target as Node)) return;
+
+      suppressNextOutsideClickRef.current = true;
+      if (suppressResetTimerRef.current !== null) {
+        window.clearTimeout(suppressResetTimerRef.current);
+      }
+      suppressResetTimerRef.current = window.setTimeout(() => {
+        suppressNextOutsideClickRef.current = false;
+        suppressResetTimerRef.current = null;
+      }, 700);
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       setIsActionMenuOpen(false);
     };
 
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("pointerdown", closeBeforeBackgroundHandlesTap, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeBeforeBackgroundHandlesTap, true);
+    };
   }, [isActionMenuOpen]);
 
   // OGP情報を取得
@@ -480,6 +519,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
                   {post.tags.map((tag, index) => (
                     <button
                       type="button"
+                      data-swipe-start
                       key={index}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -514,52 +554,52 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
                 <MoreHorizontal size={18} />
               </button>
               {isActionMenuOpen && (
-                <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
-                  {hasMedia && onSaveMedia && (
+                  <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
+                    {hasMedia && onSaveMedia && (
+                      <button
+                        type="button"
+                        onClick={handleSaveMedia}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      >
+                        <Download size={15} />
+                        <span>端末に保存</span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={handleSaveMedia}
+                      onClick={handleCopy}
                       className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
                     >
-                      <Download size={15} />
-                      <span>端末に保存</span>
+                      <Copy size={15} />
+                      <span>コピー</span>
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  >
-                    <Copy size={15} />
-                    <span>コピー</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleShare}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  >
-                    <Share size={15} />
-                    <span>Xへ投稿</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleEdit}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  >
-                    <Edit3 size={15} />
-                    <span>編集</span>
-                  </button>
-                  {movableType && onTypeChange && (
                     <button
                       type="button"
-                      onClick={(e) => handleMoveType(e, movableType)}
+                      onClick={handleShare}
                       className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
                     >
-                      <ArrowRightLeft size={15} />
-                      <span>{moveLabel}</span>
+                      <Share size={15} />
+                      <span>Xへ投稿</span>
                     </button>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      onClick={handleEdit}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <Edit3 size={15} />
+                      <span>編集</span>
+                    </button>
+                    {movableType && onTypeChange && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleMoveType(e, movableType)}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      >
+                        <ArrowRightLeft size={15} />
+                        <span>{moveLabel}</span>
+                      </button>
+                    )}
+                  </div>
               )}
             </div>
           </div>

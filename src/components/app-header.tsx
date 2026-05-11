@@ -40,7 +40,7 @@ export function AppHeader({
   return (
     <header className="border-b border-border bg-card">
       <div className="flex items-center justify-between px-4 py-2">
-        <h1 className="text-lg font-normal text-foreground">ぼっちSNS</h1>
+        <h1 className="text-lg font-normal text-foreground">Hollog</h1>
         <div className="flex items-center gap-2">
           {/*
             ネイティブアプリ化した時に共有シートから受け取るための入口。

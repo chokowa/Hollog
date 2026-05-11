@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.chokowa.bocchisns.tags",
-  appName: "Bocchi SNS Tags",
+  appName: "Hollog",
   webDir: "out",
 };
 
