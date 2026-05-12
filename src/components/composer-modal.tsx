@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { PostComposer, type PostFormValue } from "@/components/ui/post-composer";
+import { PostComposer, type InlineImageSource, type PostFormValue } from "@/components/ui/post-composer";
 
 type ComposerModalProps = {
   isOpen: boolean;
@@ -12,7 +12,7 @@ type ComposerModalProps = {
   submitLabel?: string;
   value: PostFormValue;
   onChange: (value: PostFormValue) => void;
-  onImagesSelect: (files: File[]) => void;
+  onImagesSelect: (files: File[], source?: InlineImageSource) => void;
   onNativeImagesSelect?: () => void;
   onNativeClipboardImagesSelect?: () => void;
   imagePreviewUrls?: string[];

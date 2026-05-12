@@ -18,8 +18,9 @@ import { ImageViewer } from "@/components/ui/image-viewer";
 import { SwipeConfirmSheet } from "@/components/ui/swipe-confirm-sheet";
 import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { compressLargeInlineImage, formatImageSize } from "@/lib/image-compression";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
-import { validateImageFile } from "@/lib/image-validation";
+import { MAX_INLINE_IMAGE_SIZE_BYTES, validateImageFile } from "@/lib/image-validation";
 import {
   buildHollogBackupFilename,
   createHollogBackup,
@@ -45,6 +46,7 @@ import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@
 import { postTypeLabels } from "@/lib/post-labels";
 import { readSystemTaggingEnabled, readTagSuggestionCatalog, uniqueTagSuggestions, writeSystemTaggingEnabled, writeTagSuggestionCatalog } from "@/lib/tag-suggestions";
 import type { TagContextAction } from "@/components/ui/tag-context-menu";
+import type { InlineImageSource } from "@/components/ui/post-composer";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
 
@@ -1196,8 +1198,32 @@ export default function Home() {
     applyHistoryState(detailState);
   }, [applyHistoryState, replaceHistoryState]);
 
+  const prepareInlineImageFiles = useCallback(async (files: File[], source: InlineImageSource = "picker") => {
+    if (source !== "camera" && source !== "clipboard") {
+      return files;
+    }
+
+    const largeFiles = files.filter((file) => file.size > MAX_INLINE_IMAGE_SIZE_BYTES);
+    if (largeFiles.length === 0) {
+      return files;
+    }
+
+    const preparedFiles = await Promise.all(files.map((file) => compressLargeInlineImage(file)));
+    const changedResults = preparedFiles.filter((result) => result.changed);
+    if (changedResults.length > 0) {
+      const originalSize = changedResults.reduce((total, result) => total + result.originalSize, 0);
+      const finalSize = changedResults.reduce((total, result) => total + result.finalSize, 0);
+      showToast(`軽量化しました（${formatImageSize(originalSize)} → ${formatImageSize(finalSize)}）`);
+    } else {
+      const originalSize = largeFiles.reduce((total, file) => total + file.size, 0);
+      showToast(`軽量化できず元の画像を追加しました（${formatImageSize(originalSize)}）`);
+    }
+
+    return preparedFiles.map((result) => result.file);
+  }, [showToast]);
+
   // 画像選択ハンドラー
-  const handleImagesSelect = useCallback((files: File[]) => {
+  const handleImagesSelect = useCallback(async (files: File[], source?: InlineImageSource) => {
     let currentError = "";
     const validFiles: File[] = [];
 
@@ -1212,15 +1238,16 @@ export default function Home() {
 
     setImageError(currentError);
     if (!currentError && validFiles.length > 0) {
+      const preparedFiles = await prepareInlineImageFiles(validFiles, source);
       setComposerValue((prev) => {
         const existingBlobs = prev.imageBlobs || [];
         const existingBlobIds = normalizeImageBlobIds(existingBlobs, prev.imageBlobIds) || [];
-        const nextBlobs = [...existingBlobs, ...validFiles];
+        const nextBlobs = [...existingBlobs, ...preparedFiles];
         if (nextBlobs.length > 4) {
           setImageError("画像は最大4枚まで選択できます。");
           return prev;
         }
-        const nextImageBlobIds = [...existingBlobIds, ...validFiles.map(() => createImageBlobId())];
+        const nextImageBlobIds = [...existingBlobIds, ...preparedFiles.map(() => createImageBlobId())];
         return {
           ...prev,
           imageBlobs: nextBlobs,
@@ -1237,9 +1264,9 @@ export default function Home() {
         };
       });
     }
-  }, []);
+  }, [prepareInlineImageFiles]);
 
-  const createQuickImagePostFromFiles = useCallback(async (files: File[]) => {
+  const createQuickImagePostFromFiles = useCallback(async (files: File[], source?: InlineImageSource) => {
     if (isQuickPosting) return;
 
     let currentError = "";
@@ -1264,15 +1291,16 @@ export default function Home() {
 
     setIsQuickPosting(true);
     try {
-      const imageBlobIds = validFiles.map(() => createImageBlobId());
-      const thumbnailBlobs = await createThumbnailBlobs(validFiles);
+      const preparedFiles = await prepareInlineImageFiles(validFiles, source);
+      const imageBlobIds = preparedFiles.map(() => createImageBlobId());
+      const thumbnailBlobs = await createThumbnailBlobs(preparedFiles);
       const created = await createPost({
         ...emptyForm,
         type: "post",
-        imageBlobs: validFiles,
+        imageBlobs: preparedFiles,
         imageBlobIds,
         mediaOrder: normalizeMediaOrder({
-          imageBlobs: validFiles,
+          imageBlobs: preparedFiles,
           imageBlobIds,
           mediaOrder: imageBlobIds.map((id) => ({ source: "imageBlob" as const, id })),
         }),
@@ -1283,7 +1311,7 @@ export default function Home() {
     } finally {
       setIsQuickPosting(false);
     }
-  }, [createPost, emptyForm, isQuickPosting, replaceToHome, showQuickPostToast, showToast]);
+  }, [createPost, emptyForm, isQuickPosting, prepareInlineImageFiles, replaceToHome, showQuickPostToast, showToast]);
 
   const createQuickImagePostFromNativeItems = useCallback(async (items: NativePickedMedia[], source: string) => {
     if (isQuickPosting) return;
@@ -1992,7 +2020,7 @@ export default function Home() {
         multiple
         className="hidden"
         onChange={(event) => {
-          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []));
+          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []), "picker");
           event.target.value = "";
         }}
       />
@@ -2003,7 +2031,7 @@ export default function Home() {
         capture="environment"
         className="hidden"
         onChange={(event) => {
-          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []));
+          void createQuickImagePostFromFiles(Array.from(event.target.files ?? []), "camera");
           event.target.value = "";
         }}
       />

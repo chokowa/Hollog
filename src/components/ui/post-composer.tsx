@@ -14,6 +14,8 @@ import {
 } from "@/lib/tag-suggestions";
 import type { OgpPreview, PostMediaOrderItem, PostMediaRef, PostType } from "@/types/post";
 
+export type InlineImageSource = "picker" | "camera" | "clipboard";
+
 export type PostFormValue = {
   type: PostType;
   body: string;
@@ -39,7 +41,7 @@ type PostComposerProps = {
   autoTagUrls?: boolean;
   onCancel?: () => void;
   onChange: (nextValue: PostFormValue) => void;
-  onImagesSelect: (files: File[]) => void;
+  onImagesSelect: (files: File[], source?: InlineImageSource) => void;
   onNativeImagesSelect?: () => void;
   onNativeClipboardImagesSelect?: () => void;
   onSubmit: (pendingTag?: string) => void;
@@ -242,7 +244,7 @@ export function PostComposer({
     if (files.length > 0) {
       // 画像がペーストされた場合はテキストとしてのデフォルトペーストをキャンセル
       e.preventDefault();
-      onImagesSelect(files);
+      onImagesSelect(files, "clipboard");
     }
   };
 
@@ -267,7 +269,7 @@ export function PostComposer({
         }
       }
       if (files.length > 0) {
-        onImagesSelect(files);
+        onImagesSelect(files, "clipboard");
       } else {
         alert("クリップボードに画像が見つかりませんでした。");
       }
@@ -277,9 +279,9 @@ export function PostComposer({
     }
   };
 
-  const handleImageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageInputChange = (e: React.ChangeEvent<HTMLInputElement>, source: InlineImageSource) => {
     const files = Array.from(e.target.files || []);
-    if (files.length > 0) onImagesSelect(files);
+    if (files.length > 0) onImagesSelect(files, source);
     e.target.value = "";
   };
 
@@ -524,7 +526,7 @@ export function PostComposer({
                   accept="image/*"
                   multiple
                   className="hidden"
-                  onChange={handleImageInputChange}
+                  onChange={(event) => handleImageInputChange(event, "picker")}
                 />
                 <input
                   ref={cameraInputRef}
@@ -532,7 +534,7 @@ export function PostComposer({
                   accept="image/*"
                   capture="environment"
                   className="hidden"
-                  onChange={handleImageInputChange}
+                  onChange={(event) => handleImageInputChange(event, "camera")}
                 />
                 <button
                   type="button"

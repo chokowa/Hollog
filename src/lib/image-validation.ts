@@ -1,4 +1,5 @@
-const MAX_IMAGE_SIZE_MB = 5;
+export const MAX_INLINE_IMAGE_SIZE_MB = 5;
+export const MAX_INLINE_IMAGE_SIZE_BYTES = MAX_INLINE_IMAGE_SIZE_MB * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -13,10 +14,6 @@ export function validateImageFile(file?: File) {
 
   if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
     return "画像は PNG / JPEG / WEBP / GIF のみ選択できます。";
-  }
-
-  if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
-    return `画像サイズは ${MAX_IMAGE_SIZE_MB}MB 以下にしてください。`;
   }
 
   return "";
