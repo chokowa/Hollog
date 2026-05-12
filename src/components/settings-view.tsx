@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowDown, ArrowLeft, ArrowUp, EyeOff, LayoutList, Moon, Monitor, RotateCcw, Sparkles, Sun, Tags } from "lucide-react";
+import { useRef } from "react";
+import { ArrowDown, ArrowLeft, ArrowUp, Download, EyeOff, LayoutList, Moon, Monitor, RotateCcw, Sparkles, Sun, Tags, Upload } from "lucide-react";
 import type { ThemeMode } from "@/hooks/use-theme";
 import { AppButton } from "@/components/ui/app-button";
 import {
@@ -21,6 +22,11 @@ type SettingsViewProps = {
   postCardSectionOrder: PostCardSection[];
   onPostCardSectionOrderChange: (order: PostCardSection[]) => void;
   existingTags: string[];
+  onExportJson: () => void;
+  onImportJson: (file: File) => void;
+  onImportJsonRequest: () => void;
+  useNativeJsonPicker: boolean;
+  isBackupBusy: boolean;
 };
 
 export function SettingsView({
@@ -35,7 +41,14 @@ export function SettingsView({
   postCardSectionOrder,
   onPostCardSectionOrderChange,
   existingTags,
+  onExportJson,
+  onImportJson,
+  onImportJsonRequest,
+  useNativeJsonPicker,
+  isBackupBusy,
 }: SettingsViewProps) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
   const movePostCardSection = (section: PostCardSection, direction: -1 | 1) => {
     const index = postCardSectionOrder.indexOf(section);
     const nextIndex = index + direction;
@@ -76,6 +89,60 @@ export function SettingsView({
             <AppButton block onClick={onOpenTagManager}>
               タグ管理を開く
             </AppButton>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+            <Upload size={18} className="text-primary" />
+            <h2 className="font-medium text-foreground">バックアップ</h2>
+          </div>
+          <div className="space-y-4 p-5">
+            <div className="space-y-2">
+              <AppButton
+                type="button"
+                block
+                onClick={onExportJson}
+                disabled={isBackupBusy}
+                className="gap-2"
+              >
+                <Upload size={16} />
+                バックアップを保存
+              </AppButton>
+              <AppButton
+                type="button"
+                block
+                onClick={() => {
+                  if (useNativeJsonPicker) {
+                    onImportJsonRequest();
+                    return;
+                  }
+                  importInputRef.current?.click();
+                }}
+                disabled={isBackupBusy}
+                className="gap-2"
+              >
+                <Download size={16} />
+                バックアップから復元
+              </AppButton>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              投稿、URL、タグ、プレビュー、表示設定を1つのファイルに保存できます。機種変更や念のための控えに使えます。
+            </p>
+            <div className="rounded-xl border border-border bg-secondary px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+              写真や動画の本体はまだ保存されません。復元時は同じ投稿を二重に増やさず、本文などが違うものは確認してから反映します。
+            </div>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) onImportJson(file);
+              }}
+            />
           </div>
         </section>
 

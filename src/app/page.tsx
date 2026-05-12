@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
-import { usePosts } from "@/hooks/use-posts";
+import { usePosts, type ImportConflictChoice, type ImportPostsPreview } from "@/hooks/use-posts";
 import { AppHeader } from "@/components/app-header";
 import { PostFeed } from "@/components/post-feed";
 import { BottomNav } from "@/components/bottom-nav";
@@ -12,6 +12,7 @@ import { ComposerModal } from "@/components/composer-modal";
 import { PostDetail } from "@/components/post-detail";
 import { ShareImport } from "@/components/share-import";
 import { SettingsView } from "@/components/settings-view";
+import { BackupImportReview } from "@/components/backup-import-review";
 import { TagManagerView } from "@/components/tag-manager-view";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { SwipeConfirmSheet } from "@/components/ui/swipe-confirm-sheet";
@@ -20,10 +21,20 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { validateImageFile } from "@/lib/image-validation";
 import {
+  buildHollogBackupFilename,
+  createHollogBackup,
+  parseHollogBackup,
+  stringifyHollogBackup,
+  type HollogBackupSettings,
+  type ParsedHollogBackup,
+} from "@/lib/hollog-backup";
+import {
+  openNativeJsonFile,
   pickNativeImages,
   readNativeClipboardImages,
   readNativeClipboardText,
   saveNativeImages,
+  saveNativeJsonFile,
   type NativePickedMedia,
   type NativeSaveMediaItem,
 } from "@/lib/native-media-picker";
@@ -32,7 +43,7 @@ import { readPostCardSectionOrder, writePostCardSectionOrder, type PostCardSecti
 import { buildNextOgpFetchState, canAutoRetryOgp, isOgpIncomplete, mergeOgpPreview, resetOgpFetchState } from "@/lib/post-ogp";
 import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { postTypeLabels } from "@/lib/post-labels";
-import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
+import { readSystemTaggingEnabled, readTagSuggestionCatalog, uniqueTagSuggestions, writeSystemTaggingEnabled, writeTagSuggestionCatalog } from "@/lib/tag-suggestions";
 import type { TagContextAction } from "@/components/ui/tag-context-menu";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
@@ -181,6 +192,12 @@ type TagDeleteIntent = {
   count: number;
 };
 
+type PendingBackupImport = {
+  parsed: ParsedHollogBackup;
+  preview: ImportPostsPreview;
+  choices: Record<string, ImportConflictChoice>;
+};
+
 function dataUrlToBlob(dataUrl: string, fallbackType: string) {
   const [header, base64Data] = dataUrl.split(",");
   if (!header || !base64Data) return null;
@@ -203,6 +220,33 @@ function blobToDataUrl(blob: Blob) {
     reader.onerror = () => reject(reader.error ?? new Error("画像を読み込めませんでした。"));
     reader.readAsDataURL(blob);
   });
+}
+
+async function saveJsonTextFile(fileName: string, content: string) {
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const file = new File([blob], fileName, { type: "application/json" });
+  const shareNavigator = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+
+  if (shareNavigator.share && shareNavigator.canShare?.({ files: [file] })) {
+    await shareNavigator.share({
+      files: [file],
+      title: "Hollogバックアップ",
+      text: "Hollogのバックアップです。",
+    });
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function getImageExtensionFromType(type?: string) {
@@ -316,6 +360,7 @@ export default function Home() {
     hidePostedInSourceTabs,
     setHidePostedInSourceTabs,
     hiddenTags,
+    setHiddenTags,
     toggleHiddenTag,
     activeTab,
     setActiveTab,
@@ -336,6 +381,8 @@ export default function Home() {
     bulkUpdatePostTags,
     deletePostsByTag,
     deletePost,
+    previewImportPosts,
+    importPosts,
     fromPost,
     emptyForm,
     buildTweetText,
@@ -356,6 +403,8 @@ export default function Home() {
   const [imageError, setImageError] = useState<string>("");
   const [toast, setToast] = useState<AppToast | null>(null);
   const [isQuickPosting, setIsQuickPosting] = useState(false);
+  const [isBackupBusy, setIsBackupBusy] = useState(false);
+  const [pendingBackupImport, setPendingBackupImport] = useState<PendingBackupImport | null>(null);
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
   const [tagManagerIntent, setTagManagerIntent] = useState<TagManagerIntent | null>(null);
   const [tagDeleteIntent, setTagDeleteIntent] = useState<TagDeleteIntent | null>(null);
@@ -899,6 +948,169 @@ export default function Home() {
   const setPostCardSectionOrder = useCallback((order: PostCardSection[]) => {
     setPostCardSectionOrderState(writePostCardSectionOrder(order));
   }, []);
+
+  const buildBackupSettings = useCallback((): HollogBackupSettings => ({
+    themeMode,
+    hidePostedInSourceTabs,
+    hiddenTags,
+    systemTaggingEnabled,
+    tagSuggestions: readTagSuggestionCatalog(),
+    postCardSectionOrder,
+  }), [hiddenTags, hidePostedInSourceTabs, postCardSectionOrder, systemTaggingEnabled, themeMode]);
+
+  const handleExportJson = useCallback(async () => {
+    setIsBackupBusy(true);
+    try {
+      const backup = createHollogBackup(postsRef.current, buildBackupSettings());
+      const fileName = buildHollogBackupFilename();
+      const content = stringifyHollogBackup(backup);
+      if (Capacitor.isNativePlatform()) {
+        const result = await saveNativeJsonFile(fileName, content);
+        if (result.cancelled) {
+          showToast("バックアップ保存をキャンセルしました。");
+          return;
+        }
+      } else {
+        await saveJsonTextFile(fileName, content);
+      }
+      showToast(`${backup.posts.length}件の投稿をバックアップしました。`);
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "";
+      showToast(name === "AbortError" ? "バックアップ保存をキャンセルしました。" : "バックアップを保存できませんでした。");
+    } finally {
+      setIsBackupBusy(false);
+    }
+  }, [buildBackupSettings, showToast]);
+
+  const applyBackupImport = useCallback(async (
+    parsed: ParsedHollogBackup,
+    conflictChoices: Record<string, ImportConflictChoice> = {},
+  ) => {
+    setIsBackupBusy(true);
+    try {
+      const result = await importPosts(parsed.posts, { conflictChoices });
+      if (!result) {
+        showToast("バックアップを復元できませんでした。");
+        return;
+      }
+
+      const backupSettings = parsed.backup.settings;
+      setTheme(backupSettings.themeMode);
+      setHidePostedInSourceTabs(backupSettings.hidePostedInSourceTabs);
+      setHiddenTags([...hiddenTags, ...backupSettings.hiddenTags]);
+      setSystemTaggingEnabled(backupSettings.systemTaggingEnabled);
+      setPostCardSectionOrder(backupSettings.postCardSectionOrder);
+      writeTagSuggestionCatalog(uniqueTagSuggestions([
+        ...readTagSuggestionCatalog(),
+        ...backupSettings.tagSuggestions,
+      ]));
+
+      const summary = [
+        `${result.addedCount}件を新しく追加`,
+        result.mergedTagCount > 0 ? `${result.mergedTagCount}件にタグを追加` : "",
+        result.duplicateCount > 0 ? `${result.duplicateCount}件は追加なし` : "",
+        result.overwrittenCount > 0 ? `${result.overwrittenCount}件をバックアップ内容で更新` : "",
+        result.conflictCount > result.overwrittenCount ? `${result.conflictCount - result.overwrittenCount}件は今の内容を保持` : "",
+        parsed.invalidPostCount > 0 ? `${parsed.invalidPostCount}件スキップ` : "",
+      ].filter(Boolean).join(" / ");
+      showToast(summary || "復元する新しい内容はありませんでした。");
+      setPendingBackupImport(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "バックアップファイルを読み込めませんでした。");
+    } finally {
+      setIsBackupBusy(false);
+    }
+  }, [
+    hiddenTags,
+    importPosts,
+    setHiddenTags,
+    setHidePostedInSourceTabs,
+    setPostCardSectionOrder,
+    setSystemTaggingEnabled,
+    setTheme,
+    showToast,
+  ]);
+
+  const handleImportJson = useCallback(async (file: File) => {
+    setIsBackupBusy(true);
+    try {
+      const parsed = parseHollogBackup(JSON.parse(await file.text()));
+      const preview = await previewImportPosts(parsed.posts);
+      if (!preview) {
+        showToast("バックアップ内容を確認できませんでした。");
+        return;
+      }
+
+      setPendingBackupImport({ parsed, preview, choices: {} });
+      showToast(
+        preview.conflicts.length > 0
+          ? `${preview.conflicts.length}件は内容を確認してください。`
+          : "差異はありません。内容を確認して復元できます。",
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "バックアップファイルを読み込めませんでした。");
+    } finally {
+      setIsBackupBusy(false);
+    }
+  }, [previewImportPosts, showToast]);
+
+  const handleImportJsonRequest = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    setIsBackupBusy(true);
+    try {
+      const opened = await openNativeJsonFile();
+      if (opened.cancelled) {
+        showToast("復元をキャンセルしました。");
+        return;
+      }
+      if (!opened.content) {
+        showToast("バックアップファイルを読み込めませんでした。");
+        return;
+      }
+
+      const parsed = parseHollogBackup(JSON.parse(opened.content));
+      const preview = await previewImportPosts(parsed.posts);
+      if (!preview) {
+        showToast("バックアップ内容を確認できませんでした。");
+        return;
+      }
+
+      setPendingBackupImport({ parsed, preview, choices: {} });
+      showToast(
+        preview.conflicts.length > 0
+          ? `${preview.conflicts.length}件は内容を確認してください。`
+          : "差異はありません。内容を確認して復元できます。",
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "バックアップファイルを読み込めませんでした。");
+    } finally {
+      setIsBackupBusy(false);
+    }
+  }, [previewImportPosts, showToast]);
+
+  const setBackupImportChoice = useCallback((key: string, choice: ImportConflictChoice) => {
+    setPendingBackupImport((current) => current
+      ? {
+          ...current,
+          choices: {
+            ...current.choices,
+            [key]: choice,
+          },
+        }
+      : current);
+  }, []);
+
+  const confirmPendingBackupImport = useCallback(() => {
+    if (!pendingBackupImport) return;
+    void applyBackupImport(pendingBackupImport.parsed, pendingBackupImport.choices);
+  }, [applyBackupImport, pendingBackupImport]);
+
+  const confirmAllPendingBackupImport = useCallback((choice: ImportConflictChoice) => {
+    if (!pendingBackupImport) return;
+    const choices = Object.fromEntries(pendingBackupImport.preview.conflicts.map((conflict) => [conflict.key, choice]));
+    setPendingBackupImport((current) => current ? { ...current, choices } : current);
+  }, [pendingBackupImport]);
 
   const hasMediaForTag = useCallback((tag: string) => {
     return posts.some((post) => post.tags.includes(tag) && (
@@ -1495,6 +1707,18 @@ export default function Home() {
       </div>
     </div>
   ) : null;
+  const backupImportReviewElement = pendingBackupImport ? (
+    <BackupImportReview
+      backupPostCount={pendingBackupImport.parsed.posts.length}
+      preview={pendingBackupImport.preview}
+      choices={pendingBackupImport.choices}
+      isBusy={isBackupBusy || isBusy}
+      onChoiceChange={setBackupImportChoice}
+      onConfirm={confirmPendingBackupImport}
+      onConfirmAll={confirmAllPendingBackupImport}
+      onCancel={() => setPendingBackupImport(null)}
+    />
+  ) : null;
 
   /* detail / share 画面は全画面で展開 */
   if (activeView === "detail" && selectedPost) {
@@ -1563,6 +1787,7 @@ export default function Home() {
           autoTagUrls={systemTaggingEnabled && !isEditorOpen}
         />
         {postImageViewer}
+        {backupImportReviewElement}
         {toastElement}
       </main>
     );
@@ -1596,6 +1821,7 @@ export default function Home() {
             setShareDraftThumbnailBlobs(undefined);
           }}
         />
+        {backupImportReviewElement}
         {toastElement}
       </main>
     );
@@ -1619,7 +1845,13 @@ export default function Home() {
           postCardSectionOrder={postCardSectionOrder}
           onPostCardSectionOrderChange={setPostCardSectionOrder}
           existingTags={existingTags}
+          onExportJson={handleExportJson}
+          onImportJson={handleImportJson}
+          onImportJsonRequest={handleImportJsonRequest}
+          useNativeJsonPicker={Capacitor.isNativePlatform()}
+          isBackupBusy={isBackupBusy}
         />
+        {backupImportReviewElement}
         {toastElement}
       </main>
     );
@@ -1640,6 +1872,7 @@ export default function Home() {
           initialPostTagFilter={tagManagerIntent?.tag ?? "__all__"}
           initialUntaggedOnly={tagManagerIntent?.untaggedOnly ?? true}
         />
+        {backupImportReviewElement}
         {toastElement}
       </main>
     );
@@ -1811,6 +2044,7 @@ export default function Home() {
         autoTagUrls={systemTaggingEnabled && !isEditorOpen}
       />
       {postImageViewer}
+      {backupImportReviewElement}
       {toastElement}
       {tagDeleteIntent && (
         <SwipeConfirmSheet

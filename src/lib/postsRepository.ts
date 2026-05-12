@@ -7,6 +7,7 @@ export interface PostsRepository {
   create(input: PostRecordInput): Promise<Post>;
   update(id: string, input: Partial<PostRecordInput>, options?: { touchUpdatedAt?: boolean }): Promise<Post>;
   updateOgp(id: string, ogp: Post["ogp"]): Promise<Post>;
+  importMany(posts: Post[]): Promise<Post[]>;
   delete(id: string): Promise<void>;
 }
 

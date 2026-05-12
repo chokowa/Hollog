@@ -166,6 +166,12 @@ textarea {
   display: none;
 }
 
+.backup-restore-shell {
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 96%, var(--card)), var(--background));
+}
+
 .timeline-top-chrome {
   translate: 0 0;
 }

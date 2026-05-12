@@ -200,6 +200,18 @@ export const localPostsRepository: PostsRepository = {
     return nextPost;
   },
 
+  async importMany(importedPosts) {
+    const database = await ensureSeedData();
+    const normalizedPosts = importedPosts.map((post) => normalizePost(post as LegacyPost));
+    const transaction = database.transaction(POSTS_STORE_NAME, "readwrite");
+    const postsStore = transaction.objectStore(POSTS_STORE_NAME);
+
+    await Promise.all(normalizedPosts.map((post) => postsStore.put(post)));
+    await transaction.done;
+
+    return sortPosts(normalizedPosts);
+  },
+
   async delete(id) {
     const database = await ensureSeedData();
     await database.delete(POSTS_STORE_NAME, id);

@@ -33,6 +33,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name = "BocchiMedia")
 public class BocchiMediaPlugin extends Plugin {
@@ -128,6 +129,73 @@ public class BocchiMediaPlugin extends Plugin {
         JSObject response = new JSObject();
         response.put("text", readClipboardTextValue());
         call.resolve(response);
+    }
+
+    @PluginMethod
+    public void saveJsonFile(PluginCall call) {
+        String fileName = call.getString("fileName", "hollog-backup.json");
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, sanitizeJsonFileName(fileName));
+        startActivityForResult(call, intent, "saveJsonFileResult");
+    }
+
+    @ActivityCallback
+    private void saveJsonFileResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            JSObject response = new JSObject();
+            response.put("cancelled", true);
+            call.resolve(response);
+            return;
+        }
+
+        Uri uri = result.getData().getData();
+        String content = call.getString("content", "");
+        try (OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
+            if (output == null) throw new Exception("Unable to open output");
+            output.write(content.getBytes(StandardCharsets.UTF_8));
+            JSObject response = new JSObject();
+            response.put("cancelled", false);
+            response.put("uri", uri.toString());
+            call.resolve(response);
+        } catch (Exception error) {
+            call.reject("バックアップを保存できませんでした。", error);
+        }
+    }
+
+    @PluginMethod
+    public void openJsonFile(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(call, intent, "openJsonFileResult");
+    }
+
+    @ActivityCallback
+    private void openJsonFileResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            JSObject response = new JSObject();
+            response.put("cancelled", true);
+            call.resolve(response);
+            return;
+        }
+
+        Uri uri = result.getData().getData();
+        try (InputStream input = getContext().getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new Exception("Unable to open input");
+            JSObject response = new JSObject();
+            response.put("cancelled", false);
+            response.put("uri", uri.toString());
+            response.put("name", getDisplayName(uri, 1, "application/json"));
+            response.put("content", readInputStreamText(input));
+            call.resolve(response);
+        } catch (Exception error) {
+            call.reject("バックアップファイルを読み込めませんでした。", error);
+        }
     }
 
     private void addPickedImage(JSArray items, Uri uri, int index) {
@@ -359,6 +427,24 @@ public class BocchiMediaPlugin extends Plugin {
             return safeName;
         }
         return safeName + getImageExtension(mimeType);
+    }
+
+    private String sanitizeJsonFileName(String name) {
+        String safeName = name == null ? "" : name.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        if (safeName.isEmpty()) {
+            safeName = "hollog-backup-" + System.currentTimeMillis() + ".json";
+        }
+        return safeName.toLowerCase().endsWith(".json") ? safeName : safeName + ".json";
+    }
+
+    private String readInputStreamText(InputStream input) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[16 * 1024];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            output.write(buffer, 0, read);
+        }
+        return output.toString(StandardCharsets.UTF_8.name());
     }
 
     private String getImageExtension(String mimeType) {

@@ -45,6 +45,31 @@ type PostSyncEvent = {
   createdAt: string;
 };
 
+export type ImportPostsResult = {
+  addedCount: number;
+  duplicateCount: number;
+  mergedTagCount: number;
+  conflictCount: number;
+  skippedCount: number;
+  overwrittenCount: number;
+};
+
+export type ImportConflictChoice = "keep-existing" | "use-imported";
+export type ImportConflictField = "body" | "url" | "ogp";
+
+export type ImportConflict = {
+  key: string;
+  importedIndex: number;
+  fields: ImportConflictField[];
+  existing: Post;
+  imported: Post;
+  mergedTags: string[];
+};
+
+export type ImportPostsPreview = ImportPostsResult & {
+  conflicts: ImportConflict[];
+};
+
 const emptyForm: PostFormValue = {
   type: "post",
   body: "",
@@ -148,6 +173,47 @@ function uniqueValues(values: string[]) {
   return Array.from(new Set(values));
 }
 
+function normalizeDuplicateText(value?: string) {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeDuplicateUrl(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+
+  try {
+    const url = new URL(trimmed);
+    url.hash = "";
+    return url.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return normalizeDuplicateText(trimmed);
+  }
+}
+
+function getBodyDateDuplicateKey(post: Pick<Post, "body" | "createdAt">) {
+  const body = normalizeDuplicateText(post.body);
+  const date = post.createdAt?.slice(0, 10) ?? "";
+  return body && date ? `${body}\n${date}` : "";
+}
+
+function getImportConflictFields(existing: Post, imported: Post): ImportConflictField[] {
+  const fields: ImportConflictField[] = [];
+  if (normalizeDuplicateText(existing.body) !== normalizeDuplicateText(imported.body)) {
+    fields.push("body");
+  }
+  if (normalizeDuplicateUrl(existing.url) !== normalizeDuplicateUrl(imported.url)) {
+    fields.push("url");
+  }
+  if (JSON.stringify(existing.ogp ?? null) !== JSON.stringify(imported.ogp ?? null)) {
+    fields.push("ogp");
+  }
+  return fields;
+}
+
+function buildImportConflictKey(existing: Post, imported: Post, importedIndex: number) {
+  return `${existing.id}\n${imported.id}\n${importedIndex}`;
+}
+
 function buildPostUrlMap(
   posts: Post[],
   getBlobs: (post: Post) => Blob[],
@@ -216,6 +282,142 @@ function fromPost(post: Post): PostFormValue {
     mediaRefs: getMediaRefs(post),
     mediaOrder: getMediaOrder(post),
     thumbnailBlobs: post.thumbnailBlobs,
+  };
+}
+
+function buildImportPlan(
+  latestPosts: Post[],
+  importedPosts: Post[],
+  conflictChoices: Record<string, ImportConflictChoice> = {},
+): {
+  preview: ImportPostsPreview;
+  newPosts: Post[];
+  updatesById: Map<string, Partial<PostRecordInput>>;
+} {
+  const knownById = new Map<string, { post: Post; isNew: boolean }>();
+  const knownByUrl = new Map<string, { post: Post; isNew: boolean }>();
+  const knownByBodyDate = new Map<string, { post: Post; isNew: boolean }>();
+  const updatesById = new Map<string, Partial<PostRecordInput>>();
+
+  const registerKnownPost = (post: Post, isNew: boolean) => {
+    const known = { post, isNew };
+    knownById.set(post.id, known);
+    const urlKey = normalizeDuplicateUrl(post.url);
+    if (urlKey && !knownByUrl.has(urlKey)) {
+      knownByUrl.set(urlKey, known);
+    }
+    const bodyDateKey = getBodyDateDuplicateKey(post);
+    if (bodyDateKey && !knownByBodyDate.has(bodyDateKey)) {
+      knownByBodyDate.set(bodyDateKey, known);
+    }
+  };
+
+  const findDuplicate = (post: Post) => {
+    const idMatch = knownById.get(post.id);
+    if (idMatch) return idMatch;
+
+    const urlKey = normalizeDuplicateUrl(post.url);
+    const urlMatch = urlKey ? knownByUrl.get(urlKey) : null;
+    if (urlMatch) return urlMatch;
+
+    const bodyDateKey = getBodyDateDuplicateKey(post);
+    return bodyDateKey ? knownByBodyDate.get(bodyDateKey) : undefined;
+  };
+
+  latestPosts.forEach((post) => {
+    registerKnownPost({ ...post, tags: [...post.tags] }, false);
+  });
+
+  const newPosts: Post[] = [];
+  const conflicts: ImportConflict[] = [];
+  let duplicateCount = 0;
+  let mergedTagCount = 0;
+  let conflictCount = 0;
+  let skippedCount = 0;
+  let overwrittenCount = 0;
+
+  importedPosts.forEach((post, importedIndex) => {
+    const importedPost: Post = {
+      ...post,
+      tags: uniqueTags(post.tags),
+      imageBlob: undefined,
+      imageBlobs: post.imageBlobs,
+      thumbnailBlobs: post.thumbnailBlobs,
+    };
+    const duplicate = findDuplicate(importedPost);
+
+    if (!duplicate) {
+      newPosts.push(importedPost);
+      registerKnownPost(importedPost, true);
+      return;
+    }
+
+    duplicateCount += 1;
+    const fields = getImportConflictFields(duplicate.post, importedPost);
+    const conflictKey = buildImportConflictKey(duplicate.post, importedPost, importedIndex);
+    const nextTags = uniqueTags([...duplicate.post.tags, ...importedPost.tags]);
+    const hasTagMerge = !areStringListsEqual(duplicate.post.tags, nextTags);
+    const shouldUseImported = fields.length > 0 && conflictChoices[conflictKey] === "use-imported";
+
+    if (fields.length > 0) {
+      conflictCount += 1;
+      conflicts.push({
+        key: conflictKey,
+        importedIndex,
+        fields,
+        existing: duplicate.post,
+        imported: importedPost,
+        mergedTags: nextTags,
+      });
+    }
+
+    if (!hasTagMerge && !shouldUseImported) {
+      skippedCount += 1;
+      return;
+    }
+
+    if (hasTagMerge) {
+      duplicate.post.tags = nextTags;
+      mergedTagCount += 1;
+    }
+
+    if (shouldUseImported) {
+      duplicate.post.body = importedPost.body;
+      duplicate.post.url = importedPost.url;
+      duplicate.post.ogp = importedPost.ogp;
+      duplicate.post.ogpFetch = importedPost.ogpFetch;
+      overwrittenCount += 1;
+    }
+
+    if (!duplicate.isNew) {
+      updatesById.set(duplicate.post.id, {
+        ...(updatesById.get(duplicate.post.id) ?? {}),
+        ...(hasTagMerge ? { tags: nextTags } : {}),
+        ...(shouldUseImported
+          ? {
+              body: importedPost.body,
+              url: importedPost.url,
+              ogp: importedPost.ogp,
+              ogpFetch: importedPost.ogpFetch,
+            }
+          : {}),
+        source: duplicate.post.source,
+      });
+    }
+  });
+
+  return {
+    preview: {
+      addedCount: newPosts.length,
+      duplicateCount,
+      mergedTagCount,
+      conflictCount,
+      skippedCount,
+      overwrittenCount,
+      conflicts,
+    },
+    newPosts,
+    updatesById,
   };
 }
 
@@ -680,6 +882,48 @@ export function usePosts() {
     }
   };
 
+  const previewImportPosts = async (importedPosts: Post[]): Promise<ImportPostsPreview | null> => {
+    try {
+      const latestPosts = await postsRepository.list();
+      return buildImportPlan(latestPosts, importedPosts).preview;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to preview import");
+      return null;
+    }
+  };
+
+  const importPosts = async (
+    importedPosts: Post[],
+    options: { conflictChoices?: Record<string, ImportConflictChoice> } = {},
+  ): Promise<ImportPostsResult | null> => {
+    setIsBusy(true);
+    try {
+      const latestPosts = await postsRepository.list();
+      const plan = buildImportPlan(latestPosts, importedPosts, options.conflictChoices);
+      const updatedPosts = await Promise.all(Array.from(plan.updatesById.entries()).map(([postId, input]) =>
+        postsRepository.update(
+          postId,
+          input,
+          { touchUpdatedAt: false },
+        ),
+      ));
+      await postsRepository.importMany(plan.newPosts);
+
+      const nextPosts = await postsRepository.list();
+      const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
+      postsMutationVersionRef.current += 1;
+      setPosts(nextPosts.map((post) => updatedById.get(post.id) ?? post));
+      setStatusMessage(`${plan.preview.addedCount}件の投稿を復元しました。`);
+
+      return plan.preview;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to import posts");
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return {
     posts,
     visiblePosts,
@@ -711,6 +955,8 @@ export function usePosts() {
     bulkUpdatePostTags,
     deletePostsByTag,
     deletePost,
+    previewImportPosts,
+    importPosts,
     fromPost,
     emptyForm,
     buildTweetText: (post: Post) => {
