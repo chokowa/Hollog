@@ -20,6 +20,7 @@ export type NativeSaveMediaItem = {
 type BocchiMediaPlugin = {
   pickImages(options: { limit: number }): Promise<{ items: NativePickedMedia[] }>;
   readClipboardImages(options: { limit: number }): Promise<{ items: NativePickedMedia[] }>;
+  readClipboardText(): Promise<{ text: string }>;
   saveImages(options: { items: NativeSaveMediaItem[] }): Promise<{ savedCount: number }>;
 };
 
@@ -31,6 +32,10 @@ export function pickNativeImages(limit: number) {
 
 export function readNativeClipboardImages(limit: number) {
   return BocchiMedia.readClipboardImages({ limit });
+}
+
+export function readNativeClipboardText() {
+  return BocchiMedia.readClipboardText();
 }
 
 export function saveNativeImages(items: NativeSaveMediaItem[]) {

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "github",
+    "label": "GitHub repository",
+    "category": "developer",
+    "url": "https://github.com/OP-Engineering/link-preview-js"
+  },
+  {
+    "id": "youtube",
+    "label": "YouTube video",
+    "category": "video",
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  },
+  {
+    "id": "x-post",
+    "label": "X/Twitter post",
+    "category": "social",
+    "url": "https://x.com/github/status/1722329003819974954"
+  },
+  {
+    "id": "instagram",
+    "label": "Instagram root fallback",
+    "category": "social",
+    "url": "https://www.instagram.com/"
+  },
+  {
+    "id": "amazon-jp",
+    "label": "Amazon JP",
+    "category": "commerce",
+    "url": "https://www.amazon.co.jp/"
+  },
+  {
+    "id": "zenn",
+    "label": "Zenn",
+    "category": "article",
+    "url": "https://zenn.dev/"
+  },
+  {
+    "id": "qiita",
+    "label": "Qiita",
+    "category": "article",
+    "url": "https://qiita.com/"
+  },
+  {
+    "id": "short-url",
+    "label": "Short URL redirect",
+    "category": "redirect",
+    "url": "https://youtu.be/dQw4w9WgXcQ"
+  },
+  {
+    "id": "image-direct",
+    "label": "Direct image",
+    "category": "media",
+    "url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+  },
+  {
+    "id": "invalid-domain",
+    "label": "Invalid domain",
+    "category": "failure",
+    "url": "https://example.invalid/not-found"
+  }
+]

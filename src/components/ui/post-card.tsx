@@ -2,10 +2,13 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { memo, useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Archive, Copy, Database, Download, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
+import { DEFAULT_POST_CARD_SECTION_ORDER, type PostCardSection } from "@/lib/post-card-layout";
 import { canAutoRetryOgp, isOgpIncomplete } from "@/lib/post-ogp";
+import { TagContextMenu, type TagContextAction } from "@/components/ui/tag-context-menu";
 import type { ImageOriginRect } from "@/types/navigation";
 import type { OgpPreview, Post, PostType } from "@/types/post";
 
@@ -16,13 +19,22 @@ type PostCardProps = {
   onEdit?: () => void;
   onCopy?: (post: Post, copied: boolean) => void;
   onTagClick?: (tag: string) => void;
+  onTagMenuAction?: (action: TagContextAction, tag: string) => void;
+  isTagHidden?: (tag: string) => boolean;
+  hasMediaForTag?: (tag: string) => boolean;
   onTypeChange?: (nextType: PostType) => void;
   onOgpFetched?: (ogp: OgpPreview | null) => void;
   onOgpRetry?: (post: Post) => void;
   onImageOpen?: (post: Post, index: number, originRect: ImageOriginRect) => void;
   onSaveMedia?: (post: Post) => void;
+  sectionOrder?: PostCardSection[];
   isDetail?: boolean;
 };
+
+type SectionPlacement = "first" | "middle" | "last" | "only";
+
+const COMPACT_CARD_EDGE_Y_CLASS = "py-3";
+const COMPACT_CARD_SECTION_GAP_CLASS = "mb-2.5";
 
 function formatTime(iso: string) {
   try {
@@ -77,30 +89,82 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
-function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClick, onTypeChange, onOgpFetched, onOgpRetry, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
+function PostCardComponent({
+  post,
+  imageUrls,
+  onClick,
+  onEdit,
+  onCopy,
+  onTagClick,
+  onTagMenuAction,
+  isTagHidden,
+  hasMediaForTag,
+  onTypeChange,
+  onOgpFetched,
+  onOgpRetry,
+  onImageOpen,
+  onSaveMedia,
+  sectionOrder = DEFAULT_POST_CARD_SECTION_ORDER,
+  isDetail = false,
+}: PostCardProps) {
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const [tagMenuState, setTagMenuState] = useState<{ tag: string; left: number; top: number } | null>(null);
   const [shouldFetchOgp, setShouldFetchOgp] = useState(isDetail);
   const [shouldLoadImages, setShouldLoadImages] = useState(isDetail);
   const [brokenImageUrls, setBrokenImageUrls] = useState<Set<string>>(() => new Set());
   const articleRef = useRef<HTMLElement>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+  const actionButtonRef = useRef<HTMLButtonElement>(null);
   const suppressNextOutsideClickRef = useRef(false);
   const suppressResetTimerRef = useRef<number | null>(null);
+  const tagLongPressTimerRef = useRef<number | null>(null);
+  const suppressTagClickRef = useRef<string | null>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
-  const timelineMediaBleedClass = "-mx-4 -mt-4 mb-3";
-  const timelineMediaCornerClass = "rounded-t-[28px]";
   const cardSurfaceClass = isDetail
     ? "post-card-surface cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-muted-foreground/30 hover:shadow-md active:scale-[0.997]"
-    : "post-card-surface cursor-pointer overflow-hidden rounded-[28px] border border-border/80 bg-card px-4 pb-3 pt-4 shadow-[0_1px_0_rgba(255,255,255,0.03)] transition hover:border-muted-foreground/25 hover:bg-card/95";
+    : `post-card-surface cursor-pointer overflow-hidden rounded-[28px] border border-border/80 bg-card px-4 ${COMPACT_CARD_EDGE_Y_CLASS} shadow-[0_1px_0_rgba(255,255,255,0.03)] transition hover:border-muted-foreground/25 hover:bg-card/95`;
   const compactUrlButtonClass = isDetail
     ? "w-full rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
     : "w-full rounded-2xl border border-border/80 bg-muted/35 px-3 py-2.5 text-left transition-colors hover:bg-muted/55";
   const compactOgpCardClass = isDetail
     ? "mt-2 w-full rounded-lg border border-border bg-muted/30 overflow-hidden shadow-sm transition-colors hover:bg-muted/50 text-left"
     : "mt-2 w-full overflow-hidden rounded-[22px] border border-border/80 bg-muted/25 text-left transition-colors hover:bg-muted/45";
+
+  const getFlushWrapperClass = (placement: SectionPlacement) => {
+    const horizontal = isDetail ? "-mx-5" : "-mx-4";
+    const top = placement === "first" || placement === "only" ? (isDetail ? "-mt-5" : "-mt-3") : "";
+    const bottom = placement === "last" || placement === "only"
+      ? (isDetail ? "-mb-5" : "-mb-3")
+      : isDetail ? "mb-4" : COMPACT_CARD_SECTION_GAP_CLASS;
+    return [horizontal, top, bottom].filter(Boolean).join(" ");
+  };
+
+  const getFlushRadiusClass = (placement: SectionPlacement) => {
+    if (isDetail) {
+      if (placement === "only") return "rounded-xl";
+      if (placement === "first") return "rounded-t-xl";
+      if (placement === "last") return "rounded-b-xl";
+      return "";
+    }
+
+    if (placement === "only") return "rounded-[28px]";
+    if (placement === "first") return "rounded-t-[28px]";
+    if (placement === "last") return "rounded-b-[28px]";
+    return "";
+  };
+
+  const getContainedMediaClass = (placement?: SectionPlacement) => {
+    if (placement) {
+      return `overflow-hidden bg-black/5 ${getFlushRadiusClass(placement)}`;
+    }
+    return isDetail
+      ? "mb-4 overflow-hidden rounded-xl border border-border bg-black/5"
+      : "overflow-hidden rounded-2xl border border-border/80 bg-black/5";
+  };
 
   useEffect(() => {
     if (isDetail || shouldLoadImages || !imageUrls || imageUrls.length === 0) return;
@@ -175,8 +239,8 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
     if (!isActionMenuOpen) return;
 
     const closeBeforeBackgroundHandlesTap = (event: PointerEvent) => {
-      if (actionMenuRef.current?.contains(event.target as Node)) return;
-
+      const target = event.target as Node;
+      if (actionMenuRef.current?.contains(target) || actionButtonRef.current?.contains(target)) return;
       suppressNextOutsideClickRef.current = true;
       if (suppressResetTimerRef.current !== null) {
         window.clearTimeout(suppressResetTimerRef.current);
@@ -190,12 +254,28 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
       event.stopImmediatePropagation();
       setIsActionMenuOpen(false);
     };
+    const closeFloatingMenu = () => setIsActionMenuOpen(false);
 
     document.addEventListener("pointerdown", closeBeforeBackgroundHandlesTap, true);
+    window.addEventListener("resize", closeFloatingMenu);
+    window.addEventListener("scroll", closeFloatingMenu, true);
     return () => {
       document.removeEventListener("pointerdown", closeBeforeBackgroundHandlesTap, true);
+      window.removeEventListener("resize", closeFloatingMenu);
+      window.removeEventListener("scroll", closeFloatingMenu, true);
     };
   }, [isActionMenuOpen]);
+
+  useEffect(() => {
+    if (!tagMenuState) return;
+    const closeMenu = () => setTagMenuState(null);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [tagMenuState]);
 
   // OGP情報を取得
   useEffect(() => {
@@ -263,6 +343,27 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
     onOgpRetry?.(post);
   };
 
+  const toggleActionMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (isActionMenuOpen) {
+      setIsActionMenuOpen(false);
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menuWidth = 176;
+    const menuHeight = 280;
+    const gap = 8;
+    const left = Math.max(gap, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - gap));
+    const opensDown = rect.top < window.innerHeight / 2;
+    const top = opensDown
+      ? Math.min(rect.bottom + gap, window.innerHeight - menuHeight - gap)
+      : Math.max(gap, rect.top - menuHeight - gap);
+
+    setActionMenuPosition({ left, top });
+    setIsActionMenuOpen(true);
+  };
+
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>, index: number) => {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
@@ -328,14 +429,13 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
     + (post.mediaRefs?.filter((mediaRef) => mediaRef.kind === "image").length ?? 0),
   );
 
-  const renderImages = () => {
+  const renderImages = (placement?: SectionPlacement) => {
     if (!imageUrls || imageUrls.length === 0) return null;
 
     const count = imageUrls.length;
+    const mediaBlockClass = getContainedMediaClass(placement);
     if (!shouldLoadImages) {
-      return isDetail
-        ? <div data-card-media className="-mx-5 -mt-5 mb-4 aspect-[4/3] rounded-t-xl border-b border-border bg-black/5" />
-        : <div data-card-media className={`${timelineMediaBleedClass} aspect-[4/3] ${timelineMediaCornerClass} bg-black/5`} />;
+      return <div data-card-media className={`${mediaBlockClass} aspect-[4/3]`} />;
     }
 
     if (isDetail) {
@@ -365,9 +465,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
       return (
         <div
           data-card-media
-          className={isDetail
-            ? "-mx-5 -mt-5 mb-4 aspect-[4/3] overflow-hidden rounded-t-xl border-b border-border bg-black/5"
-            : `${timelineMediaBleedClass} aspect-[4/3] overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+          className={`${mediaBlockClass} aspect-[4/3]`}
         >
           {brokenImageUrls.has(imageUrls[0]) ? renderBrokenImage("h-full w-full") : (
             <img
@@ -388,9 +486,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
       return (
         <div
           data-card-media
-          className={isDetail
-            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
-            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-2 gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+          className={`${mediaBlockClass} grid aspect-[4/3] grid-cols-2 gap-1`}
         >
           {imageUrls.map((url, i) => (
             brokenImageUrls.has(url)
@@ -405,9 +501,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
       return (
         <div
           data-card-media
-          className={isDetail
-            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
-            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+          className={`${mediaBlockClass} grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1`}
         >
           {brokenImageUrls.has(imageUrls[0])
             ? renderBrokenImage("h-full w-full")
@@ -427,9 +521,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
       return (
         <div
           data-card-media
-          className={isDetail
-            ? "-mx-5 -mt-5 mb-4 grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-t-xl border-b border-border bg-black/5"
-            : `${timelineMediaBleedClass} grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1 overflow-hidden ${timelineMediaCornerClass} bg-black/5`}
+          className={`${mediaBlockClass} grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1`}
         >
           {imageUrls.slice(0, 4).map((url, i) => (
             brokenImageUrls.has(url)
@@ -443,6 +535,278 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
     return null;
   };
 
+  const openTagMenu = (tag: string, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const menuWidth = 192;
+    const menuHeight = 248;
+    const gap = 8;
+    const left = Math.max(gap, Math.min(rect.left, window.innerWidth - menuWidth - gap));
+    const top = rect.bottom + menuHeight + gap < window.innerHeight
+      ? rect.bottom + gap
+      : Math.max(gap, rect.top - menuHeight - gap);
+    setTagMenuState({ tag, left, top });
+  };
+
+  const renderUrlSection = () => {
+    if (!post.url) return null;
+
+    return (
+      <div className={isDetail ? "mb-4" : ""}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.open(post.url, "_blank", "noopener,noreferrer");
+          }}
+          className={compactUrlButtonClass}
+        >
+          <div className="flex items-start gap-2">
+            <LinkIcon size={isDetail ? 16 : 15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className={`${isDetail ? "text-xs" : "text-[13px]"} truncate text-primary`}>{post.url}</div>
+            </div>
+            <ExternalLink size={isDetail ? 14 : 13} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+          </div>
+        </button>
+      </div>
+    );
+  };
+
+  const renderPreviewSection = (placement?: SectionPlacement) => {
+    if (!post.url) return null;
+    if (!ogpLoading && !(ogp && (ogp.title || ogp.image))) return null;
+    const previewCardClass = placement
+      ? `w-full overflow-hidden bg-muted/25 text-left transition-colors hover:bg-muted/45 ${getFlushRadiusClass(placement)}`
+      : compactOgpCardClass.replace(/^mt-2\s+/, "");
+
+    return (
+      <div className={placement ? "" : isDetail ? "mb-4" : ""}>
+        {ogpLoading && (
+          <div className="flex items-center justify-center py-3">
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {ogp && (ogp.title || ogp.image) && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(post.url, "_blank", "noopener,noreferrer");
+            }}
+            className={previewCardClass}
+          >
+            {ogp.image && (
+              <div className="aspect-video w-full overflow-hidden bg-black/5">
+                <img src={ogp.image} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+              </div>
+            )}
+            <div className={isDetail ? "p-3" : "px-3 py-2.5"}>
+              {ogp.siteName && (
+                <p className="text-xs text-muted-foreground mb-1">{ogp.siteName}</p>
+              )}
+              {ogp.title && (
+                <p className="text-sm font-medium text-foreground line-clamp-2">{ogp.title}</p>
+              )}
+              {ogp.description && (
+                <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{ogp.description}</p>
+              )}
+            </div>
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderBodySection = () => (
+    <p className={`${isDetail ? "mb-4 text-[17px]" : "text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
+      {renderBodyWithLinks(post.body)}
+    </p>
+  );
+
+  const renderActionMenu = () => {
+    if (!isActionMenuOpen || !actionMenuPosition) return null;
+    if (typeof document === "undefined") return null;
+
+    return createPortal(
+      <div
+        ref={actionMenuRef}
+        style={{ left: actionMenuPosition.left, top: actionMenuPosition.top }}
+        className="fixed z-[100] w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-2xl"
+      >
+        {hasMedia && onSaveMedia && (
+          <button
+            type="button"
+            onClick={handleSaveMedia}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <Download size={15} />
+            <span>端末に保存</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <Copy size={15} />
+          <span>コピー</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleShare}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <Share size={15} />
+          <span>Xへ投稿</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleEdit}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <Edit3 size={15} />
+          <span>編集</span>
+        </button>
+        {post.url && onOgpRetry && (
+          <button
+            type="button"
+            onClick={handleRetryOgp}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <Loader2 size={15} />
+            <span>プレビューを再取得</span>
+          </button>
+        )}
+        {movableType && onTypeChange && (
+          <button
+            type="button"
+            onClick={(e) => handleMoveType(e, movableType)}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <ArrowRightLeft size={15} />
+            <span>{moveLabel}</span>
+          </button>
+        )}
+      </div>,
+      document.body,
+    );
+  };
+
+  const renderMetaSection = () => (
+    <div>
+      {isDetail && (
+        <time className="mb-3 block text-sm text-muted-foreground">
+          {formatDetailedDateTime(post.updatedAt)}
+        </time>
+      )}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {!isDetail && (
+            <time className="shrink-0 text-[15px] text-muted-foreground">
+              {formatTime(post.updatedAt)}
+            </time>
+          )}
+          {post.tags && post.tags.length > 0 && (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
+              {post.tags.map((tag, index) => (
+                <button
+                  type="button"
+                  data-swipe-start
+                  key={index}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (suppressTagClickRef.current === tag) {
+                      suppressTagClickRef.current = null;
+                      return;
+                    }
+                    onTagClick?.(tag);
+                  }}
+                  onPointerDown={(e) => {
+                    if (isDetail || !onTagMenuAction) return;
+                    const target = e.currentTarget;
+                    if (tagLongPressTimerRef.current !== null) {
+                      window.clearTimeout(tagLongPressTimerRef.current);
+                    }
+                    tagLongPressTimerRef.current = window.setTimeout(() => {
+                      suppressTagClickRef.current = tag;
+                      openTagMenu(tag, target);
+                      tagLongPressTimerRef.current = null;
+                    }, 420);
+                  }}
+                  onPointerUp={() => {
+                    if (tagLongPressTimerRef.current !== null) {
+                      window.clearTimeout(tagLongPressTimerRef.current);
+                      tagLongPressTimerRef.current = null;
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (tagLongPressTimerRef.current !== null) {
+                      window.clearTimeout(tagLongPressTimerRef.current);
+                      tagLongPressTimerRef.current = null;
+                    }
+                  }}
+                  className={`shrink-0 rounded-full transition-colors ${
+                    isTagHidden?.(tag)
+                      ? "bg-muted text-muted-foreground/60 hover:bg-muted"
+                      : "bg-secondary text-muted-foreground hover:bg-muted hover:text-foreground"
+                  } ${isDetail ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-[11px]"}`}
+                  title={`#${tag}で絞り込み`}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="relative shrink-0">
+          <button
+            ref={actionButtonRef}
+            type="button"
+            onClick={toggleActionMenu}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
+            title="操作メニュー"
+            aria-label="操作メニュー"
+            aria-expanded={isActionMenuOpen}
+          >
+            <MoreHorizontal size={18} />
+          </button>
+          {renderActionMenu()}
+        </div>
+      </div>
+      <TagContextMenu
+        tag={tagMenuState?.tag ?? ""}
+        isOpen={Boolean(tagMenuState)}
+        position={tagMenuState ? { left: tagMenuState.left, top: tagMenuState.top } : null}
+        hasMedia={tagMenuState ? (hasMediaForTag?.(tagMenuState.tag) ?? false) : false}
+        hidden={tagMenuState ? (isTagHidden?.(tagMenuState.tag) ?? false) : false}
+        onClose={() => setTagMenuState(null)}
+        onAction={(action, tag) => onTagMenuAction?.(action, tag)}
+      />
+    </div>
+  );
+
+  const resolvedSectionOrder = isDetail ? DEFAULT_POST_CARD_SECTION_ORDER : sectionOrder;
+  const hasSectionContent = (section: PostCardSection) => {
+    if (section === "url") return Boolean(post.url);
+    if (section === "preview") return Boolean(post.url && (ogpLoading || (ogp && (ogp.title || ogp.image))));
+    if (section === "media") return Boolean(imageUrls && imageUrls.length > 0);
+    return true;
+  };
+  const visibleSectionOrder = resolvedSectionOrder.filter(hasSectionContent);
+  const getSectionPlacement = (index: number): SectionPlacement => {
+    if (visibleSectionOrder.length === 1) return "only";
+    if (index === 0) return "first";
+    if (index === visibleSectionOrder.length - 1) return "last";
+    return "middle";
+  };
+  const renderSection = (section: PostCardSection, placement?: SectionPlacement) => {
+    if (section === "url") return renderUrlSection();
+    if (section === "preview") return renderPreviewSection(placement);
+    if (section === "media") return renderImages(placement);
+    if (section === "body") return renderBodySection();
+    return renderMetaSection();
+  };
+
   return (
     <>
       <article
@@ -450,175 +814,22 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
         onClick={onClick}
         className={cardSurfaceClass}
       >
-        {post.url && (
-          <div className={isDetail ? "mb-4" : "mb-3"}>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                window.open(post.url, "_blank", "noopener,noreferrer");
-              }}
-              className={compactUrlButtonClass}
-            >
-              <div className="flex items-start gap-2">
-                <LinkIcon size={isDetail ? 16 : 15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className={`${isDetail ? "text-xs" : "text-[13px]"} truncate text-primary`}>{post.url}</div>
-                </div>
-                <ExternalLink size={isDetail ? 14 : 13} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-              </div>
-            </button>
-
-            {/* OGPプレビューカード */}
-            {ogpLoading && (
-              <div className="mt-2 flex items-center justify-center py-3">
-                <Loader2 size={16} className="animate-spin text-muted-foreground" />
-              </div>
-            )}
-            {ogp && (ogp.title || ogp.image) && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  window.open(post.url, "_blank", "noopener,noreferrer");
-                }}
-                className={compactOgpCardClass}
-              >
-                {ogp.image && (
-                  <div className="aspect-video w-full overflow-hidden bg-black/5">
-                    <img src={ogp.image} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                  </div>
-                )}
-                <div className={isDetail ? "p-3" : "px-3 py-2.5"}>
-                  {ogp.siteName && (
-                    <p className="text-xs text-muted-foreground mb-1">{ogp.siteName}</p>
-                  )}
-                  {ogp.title && (
-                    <p className="text-sm font-medium text-foreground line-clamp-2">{ogp.title}</p>
-                  )}
-                  {ogp.description && (
-                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{ogp.description}</p>
-                  )}
-                </div>
-              </button>
-            )}
-          </div>
-        )}
-
-        {renderImages()}
-
-        <p className={`${isDetail ? "mb-4 text-[17px]" : "mb-3 text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
-          {renderBodyWithLinks(post.body)}
-        </p>
-
-        <div className={`border-t border-border ${isDetail ? "pt-3.5" : "pt-2.5"}`}>
-          {isDetail && (
-            <time className="mb-3 block text-sm text-muted-foreground">
-              {formatDetailedDateTime(post.updatedAt)}
-            </time>
-          )}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              {!isDetail && (
-                <time className="shrink-0 text-[15px] text-muted-foreground">
-                  {formatTime(post.updatedAt)}
-                </time>
-              )}
-              {post.tags && post.tags.length > 0 && (
-                <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
-                  {post.tags.map((tag, index) => (
-                    <button
-                      type="button"
-                      data-swipe-start
-                      key={index}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTagClick?.(tag);
-                      }}
-                      className={`shrink-0 rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${isDetail ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-[11px]"}`}
-                      title={`#${tag}で絞り込み`}
-                    >
-                      #{tag}
-                    </button>
-                  ))}
-                </div>
-              )}
+        {visibleSectionOrder.map((section, index) => {
+          const placement = getSectionPlacement(index);
+          const shouldFlush = !isDetail && (section === "media" || section === "preview");
+          const content = renderSection(section, shouldFlush ? placement : undefined);
+          if (!content) return null;
+          const sectionWrapperClass = shouldFlush
+            ? getFlushWrapperClass(placement)
+            : !isDetail && placement !== "last" && placement !== "only"
+              ? COMPACT_CARD_SECTION_GAP_CLASS
+              : undefined;
+          return (
+            <div key={section} className={sectionWrapperClass}>
+              {content}
             </div>
-            <div ref={actionMenuRef} className="relative shrink-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsActionMenuOpen((current) => !current);
-                }}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-                title="操作メニュー"
-                aria-label="操作メニュー"
-                aria-expanded={isActionMenuOpen}
-              >
-                <MoreHorizontal size={18} />
-              </button>
-              {isActionMenuOpen && (
-                  <div className="absolute bottom-11 right-0 z-20 w-44 overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-xl">
-                    {hasMedia && onSaveMedia && (
-                      <button
-                        type="button"
-                        onClick={handleSaveMedia}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      >
-                        <Download size={15} />
-                        <span>端末に保存</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    >
-                      <Copy size={15} />
-                      <span>コピー</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleShare}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    >
-                      <Share size={15} />
-                      <span>Xへ投稿</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleEdit}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    >
-                      <Edit3 size={15} />
-                      <span>編集</span>
-                    </button>
-                    {post.url && onOgpRetry && (
-                      <button
-                        type="button"
-                        onClick={handleRetryOgp}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      >
-                        <Loader2 size={15} />
-                        <span>プレビューを再取得</span>
-                      </button>
-                    )}
-                    {movableType && onTypeChange && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleMoveType(e, movableType)}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      >
-                        <ArrowRightLeft size={15} />
-                        <span>{moveLabel}</span>
-                      </button>
-                    )}
-                  </div>
-              )}
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </article>
     </>
   );
@@ -628,7 +839,11 @@ export const PostCard = memo(PostCardComponent, (prev, next) => (
   prev.post === next.post
   && prev.imageUrls === next.imageUrls
   && prev.onCopy === next.onCopy
+  && prev.onTagMenuAction === next.onTagMenuAction
+  && prev.isTagHidden === next.isTagHidden
+  && prev.hasMediaForTag === next.hasMediaForTag
   && prev.onImageOpen === next.onImageOpen
   && prev.onSaveMedia === next.onSaveMedia
+  && prev.sectionOrder === next.sectionOrder
   && prev.isDetail === next.isDetail
 ));

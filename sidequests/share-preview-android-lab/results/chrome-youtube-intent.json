@@ -1,0 +1,21 @@
+{
+  "receivedAt": 1778562066478,
+  "action": "android.intent.action.SEND",
+  "type": "text\/plain",
+  "categories": [],
+  "extras": {
+    "android.intent.extra.SUBJECT": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) - YouTube",
+    "android.intent.extra.TEXT": "https:\/\/www.youtube.com\/watch?v=dQw4w9WgXcQ",
+    "org.chromium.chrome.extra.TASK_ID": "1016383",
+    "org.chromium.chrome.browser.share_origin": "0",
+    "android.intent.extra.TITLE": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) - YouTube"
+  },
+  "clipData": [
+    {
+      "text": "",
+      "htmlText": "",
+      "uri": "content:\/\/com.android.chrome.FileProvider\/images\/screenshot\/17785620530515536109921558555065.png",
+      "intent": ""
+    }
+  ]
+}

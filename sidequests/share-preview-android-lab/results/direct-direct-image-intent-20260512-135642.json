@@ -1,0 +1,11 @@
+{
+  "receivedAt": 1778561866667,
+  "action": "android.intent.action.SEND",
+  "type": "text\/plain",
+  "categories": [],
+  "extras": {
+    "android.intent.extra.TEXT": "https:\/\/github.githubassets.com\/images\/modules\/logos_page\/GitHub-Mark.png",
+    "android.intent.extra.TITLE": "Direct-direct-image"
+  },
+  "clipData": []
+}

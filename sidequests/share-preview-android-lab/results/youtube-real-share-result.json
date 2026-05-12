@@ -1,0 +1,148 @@
+{
+  "input": {
+    "url": "https://youtube.com/watch?v=bdqKeHiHcb0",
+    "mode": "sequential",
+    "timeoutMs": 10000,
+    "runnerIds": [
+      "intent-only",
+      "current-style-baseline",
+      "link-preview-js",
+      "openlink"
+    ]
+  },
+  "results": [
+    {
+      "runnerId": "intent-only",
+      "inputUrl": "https://youtube.com/watch?v=bdqKeHiHcb0",
+      "startedAt": "2026-05-12T05:43:33.362Z",
+      "durationMs": 0,
+      "status": "partial",
+      "phase": "normalize",
+      "normalized": {
+        "finalUrl": "https://youtube.com/watch?v=bdqKeHiHcb0",
+        "title": "youtube.com",
+        "description": "",
+        "siteName": "youtube.com",
+        "favicon": "https://youtube.com/favicon.ico"
+      },
+      "raw": {
+        "intent": {
+          "title": "",
+          "text": "https://youtube.com/watch?v=bdqKeHiHcb0"
+        },
+        "note": "No network request was made."
+      }
+    },
+    {
+      "runnerId": "current-style-baseline",
+      "inputUrl": "https://youtube.com/watch?v=bdqKeHiHcb0",
+      "startedAt": "2026-05-12T05:43:33.362Z",
+      "durationMs": 177,
+      "status": "ok",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://youtube.com/watch?v=bdqKeHiHcb0",
+        "title": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+        "description": "奇妙な夜",
+        "image": "https://i.ytimg.com/vi/bdqKeHiHcb0/hqdefault.jpg",
+        "siteName": "YouTube",
+        "favicon": "https://www.youtube.com/favicon.ico"
+      },
+      "raw": {
+        "title": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+        "author_name": "奇妙な夜",
+        "author_url": "https://www.youtube.com/@%E5%A5%87%E5%A6%99%E3%81%AA%E5%A4%9C",
+        "type": "video",
+        "height": 113,
+        "width": 200,
+        "version": "1.0",
+        "provider_name": "YouTube",
+        "provider_url": "https://www.youtube.com/",
+        "thumbnail_height": 360,
+        "thumbnail_width": 480,
+        "thumbnail_url": "https://i.ytimg.com/vi/bdqKeHiHcb0/hqdefault.jpg",
+        "html": "<iframe width=\"200\" height=\"113\" src=\"https://www.youtube.com/embed/bdqKeHiHcb0?feature=oembed\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share\" referrerpolicy=\"strict-origin-when-cross-origin\" allowfullscreen title=\"300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】\"></iframe>"
+      }
+    },
+    {
+      "runnerId": "link-preview-js",
+      "inputUrl": "https://youtube.com/watch?v=bdqKeHiHcb0",
+      "startedAt": "2026-05-12T05:43:33.539Z",
+      "durationMs": 1416,
+      "status": "ok",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://m.youtube.com/watch?v=bdqKeHiHcb0",
+        "title": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+        "description": "作成した動画を友だち、家族、世界中の人たちと共有",
+        "image": "https://i.ytimg.com/vi/bdqKeHiHcb0/maxresdefault.jpg",
+        "favicon": "https://m.youtube.com/static/favicon.ico",
+        "siteName": "YouTube"
+      },
+      "raw": {
+        "url": "https://m.youtube.com/watch?v=bdqKeHiHcb0",
+        "title": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+        "siteName": "YouTube",
+        "description": "作成した動画を友だち、家族、世界中の人たちと共有",
+        "mediaType": "video.other",
+        "contentType": "text/html",
+        "images": [
+          "https://i.ytimg.com/vi/bdqKeHiHcb0/maxresdefault.jpg"
+        ],
+        "videos": [],
+        "favicons": [
+          "https://m.youtube.com/static/favicon.ico"
+        ],
+        "charset": "utf-8"
+      }
+    },
+    {
+      "runnerId": "openlink",
+      "inputUrl": "https://youtube.com/watch?v=bdqKeHiHcb0",
+      "startedAt": "2026-05-12T05:43:34.955Z",
+      "durationMs": 972,
+      "status": "ok",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://www.youtube.com/watch?v=bdqKeHiHcb0",
+        "title": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+        "description": "ギュスターブは今もタンガニーカ湖のどこかに潜んでいるのでしょうか？\n\n#ミステリー",
+        "image": "https://i.ytimg.com/vi/bdqKeHiHcb0/maxresdefault.jpg",
+        "favicon": "https://m.youtube.com/static/favicon.ico",
+        "siteName": "YouTube"
+      },
+      "raw": {
+        "url": "https://www.youtube.com/watch?v=bdqKeHiHcb0",
+        "title": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+        "description": "ギュスターブは今もタンガニーカ湖のどこかに潜んでいるのでしょうか？\n\n#ミステリー",
+        "image": "https://i.ytimg.com/vi/bdqKeHiHcb0/maxresdefault.jpg",
+        "favicon": "https://m.youtube.com/static/favicon.ico",
+        "siteName": "YouTube",
+        "domain": "m.youtube.com",
+        "type": "video.other",
+        "contentType": "website",
+        "author": null,
+        "publishedTime": null,
+        "themeColor": "#0f0f0f",
+        "twitterCard": "player",
+        "locale": null,
+        "lang": "ja-JP",
+        "video": null,
+        "audio": null,
+        "keywords": [
+          "動画",
+          "ビデオ",
+          "共有",
+          "カメラ付き携帯電話",
+          "動画機能付き携帯電話",
+          "無料",
+          "アップロード",
+          "チャンネル",
+          "コミュニティ",
+          "YouTube",
+          "ユーチューブ"
+        ]
+      }
+    }
+  ]
+}

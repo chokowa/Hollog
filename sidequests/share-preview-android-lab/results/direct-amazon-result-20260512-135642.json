@@ -1,0 +1,124 @@
+{
+  "input": {
+    "url": "https://www.amazon.co.jp/",
+    "mode": "sequential",
+    "timeoutMs": 10000,
+    "runnerIds": [
+      "intent-only",
+      "current-style-baseline",
+      "link-preview-js",
+      "openlink"
+    ]
+  },
+  "results": [
+    {
+      "runnerId": "intent-only",
+      "inputUrl": "https://www.amazon.co.jp/",
+      "startedAt": "2026-05-12T04:57:21.603Z",
+      "durationMs": 0,
+      "status": "partial",
+      "phase": "normalize",
+      "normalized": {
+        "finalUrl": "https://www.amazon.co.jp/",
+        "title": "Direct-amazon",
+        "description": "",
+        "siteName": "amazon.co.jp",
+        "favicon": "https://amazon.co.jp/favicon.ico"
+      },
+      "raw": {
+        "intent": {
+          "title": "Direct-amazon",
+          "text": "https://www.amazon.co.jp/"
+        },
+        "note": "No network request was made."
+      }
+    },
+    {
+      "runnerId": "current-style-baseline",
+      "inputUrl": "https://www.amazon.co.jp/",
+      "startedAt": "2026-05-12T04:57:21.603Z",
+      "durationMs": 141,
+      "status": "partial",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://www.amazon.co.jp/",
+        "title": "Amazon",
+        "description": "",
+        "image": "",
+        "favicon": "https://www.amazon.co.jp/favicon.ico",
+        "siteName": "amazon.co.jp"
+      },
+      "raw": {
+        "ok": true,
+        "status": 202,
+        "finalUrl": "https://www.amazon.co.jp/",
+        "contentType": "text/html; charset=UTF-8",
+        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <title></title>\n    <style>\n        body {\n            font-family: \"Arial\";\n        }\n    </style>\n    <script type=\"text/javascript\">\n    window.awsWafCookieDomainList = [];\n    window.gokuProps = {\n\"key\":\"AQIDAHjcYu/GjX+QlghicBgQ/7bFaQZ+m5FKCMDnO+vTbNg96AH3NlVh+zcbD/H/c946aWJlAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMB7sIKay/3/u2PPB6AgEQgDusP0p/o4gWouC43NArdrYKv8ATRhNaPJaP545AYHqlTCFw7YXtxgbgcSbBa+k1nLbD3EObDvI6+t78rQ==\",\n          \"iv\":\"A6w0MgD6tQAAG5s+\",\n          \"context\":\"oXQcGFin7XIo8udDndZpVso6UklGb6xdUkFBoiSG3mj7tFBs7ZUnYR5wwhZMdPzPbH1NhGX89zjBaTE98Gpv0Hzu3iFt50FCWgmBORchWgNI6yqaU8I65k2G4j5Y0rwMr7kWSWKMq8lyT2Z6sGi1huOUz/afo4spSWTXR4Rw+N8VC2guiBdFEE99WF5K0rERZwfh/62QtFaJeDahQy8eZWVwQHyt1VLE3tv6C+NXrtDTQUKQQU/nJwh263jVOb5trNG++lokaxY4UZ+NKs5qnqdnGor8DTOn854nLxKz5+GiSF4vqtquPtqpafy7QDvfpqzxf8/gmffcoRDryd7Jv0Rg6de5kScBSgpkg8z/ZudDpvvgfwqCMu6AuBusT6XweLQOgFTE\"\n};\n    </script>\n    <script src=\"https://1c5c1ecf7303.5a59d28b.ap-northeast-1.token.awswaf.com/1c5c1ecf7303/68f86b376542/d807fcba4336/challenge.js\"></script>\n</head>\n<body>\n    <div id=\"challenge-container\"></div>\n    <script type=\"text/javascript\">\n        AwsWafIntegration.saveReferrer();\n        AwsWafIntegration.checkForceRefresh().then((forceRefresh) => {\n            if (forceRefresh) {\n                AwsWafIntegration.forceRefreshToken().then(() => {\n                    window.location.reload(true);\n                });\n            } else {\n                AwsWafIntegration.getToken().then(() => {\n                    window.location.reload(true);\n                });\n            }\n        });\n    </script>\n    <noscript>\n        <h1>JavaScript is disabled</h1>\n        In order to continue, we need to verify that you're not a robot.\n        This requires JavaScript. Enable JavaScript and then reload the page.\n    </noscript>\n</body>\n</html>"
+      }
+    },
+    {
+      "runnerId": "link-preview-js",
+      "inputUrl": "https://www.amazon.co.jp/",
+      "startedAt": "2026-05-12T04:57:21.744Z",
+      "durationMs": 94,
+      "status": "partial",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://www.amazon.co.jp/",
+        "title": "",
+        "description": "",
+        "image": "",
+        "favicon": "https://www.amazon.co.jp/favicon.ico",
+        "siteName": "amazon.co.jp"
+      },
+      "raw": {
+        "url": "https://www.amazon.co.jp/",
+        "title": "",
+        "mediaType": "website",
+        "contentType": "text/html",
+        "images": [],
+        "videos": [],
+        "favicons": [
+          "https://www.amazon.co.jp/favicon.ico"
+        ],
+        "charset": "UTF-8"
+      }
+    },
+    {
+      "runnerId": "openlink",
+      "inputUrl": "https://www.amazon.co.jp/",
+      "startedAt": "2026-05-12T04:57:21.838Z",
+      "durationMs": 38,
+      "status": "partial",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://www.amazon.co.jp/",
+        "title": "",
+        "description": "",
+        "image": "",
+        "favicon": "https://www.amazon.co.jp/favicon.ico",
+        "siteName": "www.amazon.co.jp"
+      },
+      "raw": {
+        "url": "https://www.amazon.co.jp/",
+        "title": null,
+        "description": null,
+        "image": null,
+        "favicon": "https://www.amazon.co.jp/favicon.ico",
+        "siteName": "www.amazon.co.jp",
+        "domain": "www.amazon.co.jp",
+        "type": "website",
+        "contentType": "website",
+        "author": null,
+        "publishedTime": null,
+        "themeColor": null,
+        "twitterCard": null,
+        "locale": null,
+        "lang": "en",
+        "video": null,
+        "audio": null,
+        "keywords": null
+      }
+    }
+  ]
+}

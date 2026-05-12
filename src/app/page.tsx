@@ -14,6 +14,7 @@ import { ShareImport } from "@/components/share-import";
 import { SettingsView } from "@/components/settings-view";
 import { TagManagerView } from "@/components/tag-manager-view";
 import { ImageViewer } from "@/components/ui/image-viewer";
+import { SwipeConfirmSheet } from "@/components/ui/swipe-confirm-sheet";
 import { useTheme } from "@/hooks/use-theme";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
@@ -21,15 +22,18 @@ import { validateImageFile } from "@/lib/image-validation";
 import {
   pickNativeImages,
   readNativeClipboardImages,
+  readNativeClipboardText,
   saveNativeImages,
   type NativePickedMedia,
   type NativeSaveMediaItem,
 } from "@/lib/native-media-picker";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
+import { readPostCardSectionOrder, writePostCardSectionOrder, type PostCardSection } from "@/lib/post-card-layout";
 import { buildNextOgpFetchState, canAutoRetryOgp, isOgpIncomplete, mergeOgpPreview, resetOgpFetchState } from "@/lib/post-ogp";
 import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { postTypeLabels } from "@/lib/post-labels";
 import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
+import type { TagContextAction } from "@/components/ui/tag-context-menu";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
 
@@ -166,6 +170,17 @@ type CalendarState = {
   activeTags: string[];
 };
 
+type TagManagerIntent = {
+  tag: string;
+  untaggedOnly: boolean;
+  token: string;
+};
+
+type TagDeleteIntent = {
+  tag: string;
+  count: number;
+};
+
 function dataUrlToBlob(dataUrl: string, fallbackType: string) {
   const [header, base64Data] = dataUrl.split(",");
   if (!header || !base64Data) return null;
@@ -300,6 +315,8 @@ export default function Home() {
     visiblePosts,
     hidePostedInSourceTabs,
     setHidePostedInSourceTabs,
+    hiddenTags,
+    toggleHiddenTag,
     activeTab,
     setActiveTab,
     activeTag,
@@ -317,6 +334,7 @@ export default function Home() {
     updatePostStatus,
     updatePostOgp,
     bulkUpdatePostTags,
+    deletePostsByTag,
     deletePost,
     fromPost,
     emptyForm,
@@ -331,6 +349,7 @@ export default function Home() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [systemTaggingEnabled, setSystemTaggingEnabledState] = useState(readSystemTaggingEnabled);
+  const [postCardSectionOrder, setPostCardSectionOrderState] = useState(readPostCardSectionOrder);
   const [composerValue, setComposerValue] = useState(emptyForm);
   const [shareDraftMediaRefs, setShareDraftMediaRefs] = useState<PostMediaRef[]>([]);
   const [shareDraftThumbnailBlobs, setShareDraftThumbnailBlobs] = useState<Blob[] | undefined>();
@@ -338,6 +357,8 @@ export default function Home() {
   const [toast, setToast] = useState<AppToast | null>(null);
   const [isQuickPosting, setIsQuickPosting] = useState(false);
   const [pendingShareImport, setPendingShareImport] = useState<PendingShareImport | null>(null);
+  const [tagManagerIntent, setTagManagerIntent] = useState<TagManagerIntent | null>(null);
+  const [tagDeleteIntent, setTagDeleteIntent] = useState<TagDeleteIntent | null>(null);
   const [calendarState, setCalendarState] = useState<CalendarState>({
     selectedDateKey: null,
     visibleMonthKey: null,
@@ -364,6 +385,11 @@ export default function Home() {
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
+  const visibleCalendarPosts = useMemo(() => {
+    if (hiddenTags.length === 0) return posts;
+    const hiddenTagSet = new Set(hiddenTags);
+    return posts.filter((post) => !post.tags.some((tag) => hiddenTagSet.has(tag)));
+  }, [hiddenTags, posts]);
 
   useEffect(() => {
     postsRef.current = posts;
@@ -870,6 +896,88 @@ export default function Home() {
     setSystemTaggingEnabledState(writeSystemTaggingEnabled(enabled));
   }, []);
 
+  const setPostCardSectionOrder = useCallback((order: PostCardSection[]) => {
+    setPostCardSectionOrderState(writePostCardSectionOrder(order));
+  }, []);
+
+  const hasMediaForTag = useCallback((tag: string) => {
+    return posts.some((post) => post.tags.includes(tag) && (
+      (post.imageBlobs?.length ?? 0) > 0
+      || Boolean(post.imageBlob)
+      || (post.mediaRefs?.length ?? 0) > 0
+    ));
+  }, [posts]);
+
+  const openCalendarWithTag = useCallback((tag: string) => {
+    setCalendarState((current) => ({
+      ...current,
+      activeTags: [tag],
+    }));
+    pushHistoryState({ bocchiSns: true, view: "calendar" });
+  }, [pushHistoryState]);
+
+  const openTagManagerWithTag = useCallback((tag: string) => {
+    setTagManagerIntent({
+      tag,
+      untaggedOnly: false,
+      token: `${tag}-${Date.now()}`,
+    });
+    pushHistoryState({ bocchiSns: true, view: "tag-manager" });
+  }, [pushHistoryState]);
+
+  const handleDeletePostsByTag = useCallback(async (tag: string) => {
+    const deletedCount = await deletePostsByTag(tag);
+    setTagDeleteIntent(null);
+    if (deletedCount > 0) {
+      showToast(`${deletedCount}件の投稿を削除しました。`);
+    }
+  }, [deletePostsByTag, showToast]);
+
+  const handleTagMenuAction = useCallback(async (action: TagContextAction, tag: string) => {
+    if (action === "media") {
+      if (!hasMediaForTag(tag)) return;
+      setActiveTab("media");
+      setActiveTag(tag);
+      replaceHistoryState({ bocchiSns: true, view: "home", activeTag: tag });
+      applyHistoryState({ bocchiSns: true, view: "home", activeTag: tag });
+      return;
+    }
+    if (action === "calendar") {
+      openCalendarWithTag(tag);
+      return;
+    }
+    if (action === "copy") {
+      const copied = await copyTextToClipboard(`#${tag}`);
+      showToast(copied ? "タグ名をコピーしました。" : "コピーできませんでした。");
+      return;
+    }
+    if (action === "visibility") {
+      toggleHiddenTag(tag);
+      showToast(hiddenTags.includes(tag) ? `#${tag} を再表示しました。` : `#${tag} を非表示にしました。`);
+      return;
+    }
+    if (action === "manage") {
+      openTagManagerWithTag(tag);
+      return;
+    }
+    const count = posts.filter((post) => post.tags.includes(tag)).length;
+    if (count > 0) {
+      setTagDeleteIntent({ tag, count });
+    }
+  }, [
+    applyHistoryState,
+    hasMediaForTag,
+    hiddenTags,
+    openCalendarWithTag,
+    openTagManagerWithTag,
+    posts,
+    replaceHistoryState,
+    setActiveTab,
+    setActiveTag,
+    showToast,
+    toggleHiddenTag,
+  ]);
+
   const replaceToDetail = useCallback((postId: string) => {
     const detailState: AppHistoryState = { bocchiSns: true, view: "detail", postId };
     replaceHistoryState(detailState);
@@ -1027,7 +1135,7 @@ export default function Home() {
     }
 
     try {
-      const clipboardText = await navigator.clipboard?.readText?.();
+      const clipboardText = await readClipboardUrlText();
       const url = extractSharedUrl(clipboardText ?? "");
       if (!url) {
         showToast("クリップボードに画像またはURLが見つかりませんでした。");
@@ -1120,9 +1228,25 @@ export default function Home() {
 
     try {
       const result = await readNativeClipboardImages(remaining);
-      await addNativeItemsToComposer(result.items ?? [], "clipboard");
+      if (result.items?.length) {
+        await addNativeItemsToComposer(result.items, "clipboard");
+        return;
+      }
+
+      const clipboardText = await readClipboardUrlText();
+      const url = extractSharedUrl(clipboardText ?? "");
+      if (!url) {
+        setImageError("クリップボードに画像またはURLが見つかりませんでした。");
+        return;
+      }
+
+      setImageError("");
+      setComposerValue((current) => ({
+        ...current,
+        url,
+      }));
     } catch {
-      setImageError("クリップボードから画像を読み込めませんでした。");
+      setImageError("クリップボードから画像またはURLを読み込めませんでした。");
     }
   }, [addNativeItemsToComposer, composerValue.imageBlobs, composerValue.mediaRefs]);
 
@@ -1179,9 +1303,28 @@ export default function Home() {
 
     try {
       const result = await readNativeClipboardImages(remaining);
-      await addNativeItemsToShareDraft(result.items ?? [], "clipboard");
+      if (result.items?.length) {
+        await addNativeItemsToShareDraft(result.items, "clipboard");
+        return;
+      }
+
+      const clipboardText = await readClipboardUrlText();
+      const url = extractSharedUrl(clipboardText ?? "");
+      if (!url) {
+        setImageError("クリップボードに画像またはURLが見つかりませんでした。");
+        return;
+      }
+
+      setImageError("");
+      setPendingShareImport((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          url,
+        };
+      });
     } catch {
-      setImageError("クリップボードから画像を読み込めませんでした。");
+      setImageError("クリップボードから画像またはURLを読み込めませんでした。");
     }
   }, [addNativeItemsToShareDraft, pendingShareImport?.imageBlobs, pendingShareImport?.images, shareDraftMediaRefs.length]);
 
@@ -1460,13 +1603,18 @@ export default function Home() {
       <main className="flex flex-col flex-1">
         <SettingsView
           onBack={goBackOrHome}
-          onOpenTagManager={() => pushHistoryState({ bocchiSns: true, view: "tag-manager" })}
+          onOpenTagManager={() => {
+            setTagManagerIntent(null);
+            pushHistoryState({ bocchiSns: true, view: "tag-manager" });
+          }}
           themeMode={themeMode}
           onThemeChange={setTheme}
           hidePostedInSourceTabs={hidePostedInSourceTabs}
           onHidePostedInSourceTabsChange={setHidePostedInSourceTabs}
           systemTaggingEnabled={systemTaggingEnabled}
           onSystemTaggingEnabledChange={setSystemTaggingEnabled}
+          postCardSectionOrder={postCardSectionOrder}
+          onPostCardSectionOrderChange={setPostCardSectionOrder}
           existingTags={existingTags}
         />
         {toastElement}
@@ -1478,12 +1626,16 @@ export default function Home() {
     return (
       <main className="flex flex-col flex-1">
         <TagManagerView
+          key={tagManagerIntent?.token ?? "tag-manager"}
           onBack={goBackOrHome}
           posts={posts}
           isBusy={isBusy}
           postThumbnailUrlMap={postThumbnailUrlMap}
           existingTags={existingTags}
           onBulkUpdatePostTags={bulkUpdatePostTags}
+          initialActiveTab={tagManagerIntent ? "bulk" : "catalog"}
+          initialPostTagFilter={tagManagerIntent?.tag ?? "__all__"}
+          initialUntaggedOnly={tagManagerIntent?.untaggedOnly ?? true}
         />
         {toastElement}
       </main>
@@ -1510,6 +1662,8 @@ export default function Home() {
             activeTag={activeTag}
             availableTags={availableTags}
             onTagChange={handleTimelineTagChange}
+            onTagMenuAction={handleTagMenuAction}
+            hasMediaForTag={hasMediaForTag}
             postImageUrlMap={postImageUrlMap}
             postThumbnailUrlMap={postThumbnailUrlMap}
             onPostClick={openPostDetail}
@@ -1527,6 +1681,7 @@ export default function Home() {
             onImageViewerOpen={openImageViewer}
             onImageViewerClose={closeImageViewer}
             isBooting={isBooting}
+            postCardSectionOrder={postCardSectionOrder}
             header={
               <AppHeader
                 onRefresh={loadPosts}
@@ -1543,7 +1698,7 @@ export default function Home() {
 
       {activeView === "calendar" && (
         <CalendarView
-          posts={posts}
+          posts={visibleCalendarPosts}
           postThumbnailUrlMap={postThumbnailUrlMap}
           onPostClick={openPostDetail}
           onPostEdit={openEditComposer}
@@ -1651,6 +1806,24 @@ export default function Home() {
       />
       {postImageViewer}
       {toastElement}
+      {tagDeleteIntent && (
+        <SwipeConfirmSheet
+          title={`#${tagDeleteIntent.tag} の投稿を削除`}
+          description={`${tagDeleteIntent.count}件の投稿が削除されます。この操作は元に戻せません。`}
+          confirmLabel="削除する"
+          onCancel={() => setTagDeleteIntent(null)}
+          onConfirm={() => void handleDeletePostsByTag(tagDeleteIntent.tag)}
+        />
+      )}
     </main>
   );
+}
+
+async function readClipboardUrlText() {
+  if (Capacitor.isNativePlatform()) {
+    const nativeResult = await readNativeClipboardText();
+    return nativeResult.text ?? "";
+  }
+
+  return await navigator.clipboard?.readText?.() ?? "";
 }

@@ -1,0 +1,148 @@
+{
+  "input": {
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "mode": "sequential",
+    "timeoutMs": 10000,
+    "runnerIds": [
+      "intent-only",
+      "current-style-baseline",
+      "link-preview-js",
+      "openlink"
+    ]
+  },
+  "results": [
+    {
+      "runnerId": "intent-only",
+      "inputUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "startedAt": "2026-05-12T04:56:53.309Z",
+      "durationMs": 0,
+      "status": "partial",
+      "phase": "normalize",
+      "normalized": {
+        "finalUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "title": "Direct-youtube",
+        "description": "",
+        "siteName": "youtube.com",
+        "favicon": "https://youtube.com/favicon.ico"
+      },
+      "raw": {
+        "intent": {
+          "title": "Direct-youtube",
+          "text": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        },
+        "note": "No network request was made."
+      }
+    },
+    {
+      "runnerId": "current-style-baseline",
+      "inputUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "startedAt": "2026-05-12T04:56:53.309Z",
+      "durationMs": 168,
+      "status": "ok",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "description": "Rick Astley",
+        "image": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        "siteName": "YouTube",
+        "favicon": "https://www.youtube.com/favicon.ico"
+      },
+      "raw": {
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "author_name": "Rick Astley",
+        "author_url": "https://www.youtube.com/@RickAstleyYT",
+        "type": "video",
+        "height": 113,
+        "width": 200,
+        "version": "1.0",
+        "provider_name": "YouTube",
+        "provider_url": "https://www.youtube.com/",
+        "thumbnail_height": 360,
+        "thumbnail_width": 480,
+        "thumbnail_url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        "html": "<iframe width=\"200\" height=\"113\" src=\"https://www.youtube.com/embed/dQw4w9WgXcQ?feature=oembed\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share\" referrerpolicy=\"strict-origin-when-cross-origin\" allowfullscreen title=\"Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)\"></iframe>"
+      }
+    },
+    {
+      "runnerId": "link-preview-js",
+      "inputUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "startedAt": "2026-05-12T04:56:53.477Z",
+      "durationMs": 1037,
+      "status": "ok",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "description": "作成した動画を友だち、家族、世界中の人たちと共有",
+        "image": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+        "favicon": "https://m.youtube.com/static/favicon.ico",
+        "siteName": "YouTube"
+      },
+      "raw": {
+        "url": "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "siteName": "YouTube",
+        "description": "作成した動画を友だち、家族、世界中の人たちと共有",
+        "mediaType": "video.other",
+        "contentType": "text/html",
+        "images": [
+          "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"
+        ],
+        "videos": [],
+        "favicons": [
+          "https://m.youtube.com/static/favicon.ico"
+        ],
+        "charset": "utf-8"
+      }
+    },
+    {
+      "runnerId": "openlink",
+      "inputUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "startedAt": "2026-05-12T04:56:54.514Z",
+      "durationMs": 879,
+      "status": "ok",
+      "phase": "parse",
+      "normalized": {
+        "finalUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "description": "The official video for “Never Gonna Give You Up” by Rick Astley. \n\nNever: The Autobiography 📚 OUT NOW! \nFollow this link to get your copy and listen to Rick’s ‘Never’ playlist ❤️ #RickAstleyNever\nhttps://linktr.ee/rickastleynever\n\n“Never Gonna Give You Up” was a global smash on its release in July 1987, topping the charts in 25 countries including Rick’s native UK and the US Billboard Hot 100.  It also won the Brit Award for Best single in 1988. Stock Aitken and Waterman wrote and produced the track which was the lead-off single and lead track from Rick’s debut LP “Whenever You Need Somebody”.  The album was itself a UK number one and would go on to sell over 15 million copies worldwide.\n\nThe legendary video was directed by Simon West – who later went on to make Hollywood blockbusters such as Con Air, Lara Croft – Tomb Raider and The Expendables 2.  The video passed the 1bn YouTube views milestone on 28 July 2021.\n\nSubscribe to the official Rick Astley YouTube channel: https://RickAstley.lnk.to/YTSubID\n\nFollow Rick Astley:\nFacebook: https://RickAstley.lnk.to/FBFollowID \nTwitter: https://RickAstley.lnk.to/TwitterID \nInstagram: https://RickAstley.lnk.to/InstagramID \nWebsite: https://RickAstley.lnk.to/storeID \nTikTok: https://RickAstley.lnk.to/TikTokID\n\nListen to Rick Astley:\nSpotify: https://RickAstley.lnk.to/SpotifyID \nApple Music: https://RickAstley.lnk.to/AppleMusicID \nAmazon Music: https://RickAstley.lnk.to/AmazonMusicID \nDeezer: https://RickAstley.lnk.to/DeezerID \n\nLyrics:\nWe’re no strangers to love\nYou know the rules and so do I\nA full commitment’s what I’m thinking of\nYou wouldn’t get this from any other guy\n\nI just wanna tell you how I’m feeling\nGotta make you understand\n\nNever gonna give you up\nNever gonna let you down\nNever gonna run around and desert you\nNever gonna make you cry\nNever gonna say goodbye\nNever gonna tell a lie and hurt you\n\nWe’ve known each other for so long\nYour heart’s been aching but you’re too shy to say it\nInside we both know what’s been going on\nWe know the game and we’re gonna play it\n\nAnd if you ask me how I’m feeling\nDon’t tell me you’re too blind to see\n\nNever gonna give you up\nNever gonna let you down\nNever gonna run around and desert you\nNever gonna make you cry\nNever gonna say goodbye\nNever gonna tell a lie and hurt you\n\n#RickAstley #NeverGonnaGiveYouUp #WheneverYouNeedSomebody #OfficialMusicVideo",
+        "image": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+        "favicon": "https://m.youtube.com/static/favicon.ico",
+        "siteName": "YouTube"
+      },
+      "raw": {
+        "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+        "description": "The official video for “Never Gonna Give You Up” by Rick Astley. \n\nNever: The Autobiography 📚 OUT NOW! \nFollow this link to get your copy and listen to Rick’s ‘Never’ playlist ❤️ #RickAstleyNever\nhttps://linktr.ee/rickastleynever\n\n“Never Gonna Give You Up” was a global smash on its release in July 1987, topping the charts in 25 countries including Rick’s native UK and the US Billboard Hot 100.  It also won the Brit Award for Best single in 1988. Stock Aitken and Waterman wrote and produced the track which was the lead-off single and lead track from Rick’s debut LP “Whenever You Need Somebody”.  The album was itself a UK number one and would go on to sell over 15 million copies worldwide.\n\nThe legendary video was directed by Simon West – who later went on to make Hollywood blockbusters such as Con Air, Lara Croft – Tomb Raider and The Expendables 2.  The video passed the 1bn YouTube views milestone on 28 July 2021.\n\nSubscribe to the official Rick Astley YouTube channel: https://RickAstley.lnk.to/YTSubID\n\nFollow Rick Astley:\nFacebook: https://RickAstley.lnk.to/FBFollowID \nTwitter: https://RickAstley.lnk.to/TwitterID \nInstagram: https://RickAstley.lnk.to/InstagramID \nWebsite: https://RickAstley.lnk.to/storeID \nTikTok: https://RickAstley.lnk.to/TikTokID\n\nListen to Rick Astley:\nSpotify: https://RickAstley.lnk.to/SpotifyID \nApple Music: https://RickAstley.lnk.to/AppleMusicID \nAmazon Music: https://RickAstley.lnk.to/AmazonMusicID \nDeezer: https://RickAstley.lnk.to/DeezerID \n\nLyrics:\nWe’re no strangers to love\nYou know the rules and so do I\nA full commitment’s what I’m thinking of\nYou wouldn’t get this from any other guy\n\nI just wanna tell you how I’m feeling\nGotta make you understand\n\nNever gonna give you up\nNever gonna let you down\nNever gonna run around and desert you\nNever gonna make you cry\nNever gonna say goodbye\nNever gonna tell a lie and hurt you\n\nWe’ve known each other for so long\nYour heart’s been aching but you’re too shy to say it\nInside we both know what’s been going on\nWe know the game and we’re gonna play it\n\nAnd if you ask me how I’m feeling\nDon’t tell me you’re too blind to see\n\nNever gonna give you up\nNever gonna let you down\nNever gonna run around and desert you\nNever gonna make you cry\nNever gonna say goodbye\nNever gonna tell a lie and hurt you\n\n#RickAstley #NeverGonnaGiveYouUp #WheneverYouNeedSomebody #OfficialMusicVideo",
+        "image": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+        "favicon": "https://m.youtube.com/static/favicon.ico",
+        "siteName": "YouTube",
+        "domain": "m.youtube.com",
+        "type": "video.other",
+        "contentType": "website",
+        "author": null,
+        "publishedTime": null,
+        "themeColor": "#0f0f0f",
+        "twitterCard": "player",
+        "locale": null,
+        "lang": "ja-JP",
+        "video": null,
+        "audio": null,
+        "keywords": [
+          "動画",
+          "ビデオ",
+          "共有",
+          "カメラ付き携帯電話",
+          "動画機能付き携帯電話",
+          "無料",
+          "アップロード",
+          "チャンネル",
+          "コミュニティ",
+          "YouTube",
+          "ユーチューブ"
+        ]
+      }
+    }
+  ]
+}

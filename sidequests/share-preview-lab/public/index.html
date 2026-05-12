@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Share Preview Lab</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Sidequest Lab</p>
+        <h1>Share Preview Lab</h1>
+        <p class="lead">同じURLを複数runnerに投げ、raw結果・正規化結果・速度・失敗phaseを横並びで比較します。本番アプリには接続しません。</p>
+      </header>
+
+      <section class="panel controls">
+        <label class="field field-url">
+          <span>URL</span>
+          <input id="urlInput" type="url" placeholder="https://example.com/article" autocomplete="off">
+        </label>
+
+        <details class="advanced">
+          <summary>共有Intent風データ</summary>
+          <div class="advanced-grid">
+            <label class="field">
+              <span>Intent title</span>
+              <input id="intentTitleInput" type="text" placeholder="共有元が渡したタイトル">
+            </label>
+            <label class="field">
+              <span>Intent text</span>
+              <textarea id="intentTextInput" rows="3" placeholder="共有元が渡したテキスト"></textarea>
+            </label>
+          </div>
+        </details>
+
+        <div class="runner-list" id="runnerList" aria-label="Runner list"></div>
+
+        <div class="control-row">
+          <label class="select-label">
+            実行モード
+            <select id="modeSelect">
+              <option value="parallel">横並び並列</option>
+              <option value="sequential">横並び逐次</option>
+            </select>
+          </label>
+          <label class="select-label">
+            Timeout
+            <select id="timeoutSelect">
+              <option value="5000">5秒</option>
+              <option value="10000" selected>10秒</option>
+              <option value="20000">20秒</option>
+              <option value="30000">30秒</option>
+            </select>
+          </label>
+          <button id="runButton" class="primary" type="button">比較実行</button>
+          <button id="runSelectedButton" type="button">選択runnerのみ再実行</button>
+          <button id="exportButton" type="button" disabled>JSONを書き出し</button>
+        </div>
+      </section>
+
+      <section class="panel corpus">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Corpus</p>
+            <h2>固定URLセット</h2>
+          </div>
+          <button id="runCorpusButton" type="button">選択URLを実行</button>
+        </div>
+        <div id="corpusList" class="corpus-list"></div>
+      </section>
+
+      <section class="results-wrap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Results</p>
+            <h2>横並び結果</h2>
+          </div>
+          <p id="runMeta" class="run-meta">まだ実行していません。</p>
+        </div>
+        <div id="results" class="results"></div>
+      </section>
+    </main>
+
+    <template id="resultCardTemplate">
+      <article class="result-card">
+        <div class="result-head">
+          <div>
+            <h3></h3>
+            <p class="runner-id"></p>
+          </div>
+          <span class="status"></span>
+        </div>
+        <div class="preview"></div>
+        <dl class="metrics"></dl>
+        <details>
+          <summary>raw / normalized</summary>
+          <pre></pre>
+        </details>
+      </article>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

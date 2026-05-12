@@ -1,8 +1,13 @@
 "use client";
 
-import { ArrowLeft, EyeOff, Moon, Monitor, Sparkles, Sun, Tags } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, EyeOff, LayoutList, Moon, Monitor, RotateCcw, Sparkles, Sun, Tags } from "lucide-react";
 import type { ThemeMode } from "@/hooks/use-theme";
 import { AppButton } from "@/components/ui/app-button";
+import {
+  DEFAULT_POST_CARD_SECTION_ORDER,
+  POST_CARD_SECTION_LABELS,
+  type PostCardSection,
+} from "@/lib/post-card-layout";
 
 type SettingsViewProps = {
   onBack: () => void;
@@ -13,6 +18,8 @@ type SettingsViewProps = {
   onHidePostedInSourceTabsChange: (hidden: boolean) => void;
   systemTaggingEnabled: boolean;
   onSystemTaggingEnabledChange: (enabled: boolean) => void;
+  postCardSectionOrder: PostCardSection[];
+  onPostCardSectionOrderChange: (order: PostCardSection[]) => void;
   existingTags: string[];
 };
 
@@ -25,8 +32,20 @@ export function SettingsView({
   onHidePostedInSourceTabsChange,
   systemTaggingEnabled,
   onSystemTaggingEnabledChange,
+  postCardSectionOrder,
+  onPostCardSectionOrderChange,
   existingTags,
 }: SettingsViewProps) {
+  const movePostCardSection = (section: PostCardSection, direction: -1 | 1) => {
+    const index = postCardSectionOrder.indexOf(section);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= postCardSectionOrder.length) return;
+
+    const nextOrder = [...postCardSectionOrder];
+    [nextOrder[index], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[index]];
+    onPostCardSectionOrderChange(nextOrder);
+  };
+
   return (
     <div className="flex flex-col flex-1 bg-secondary min-h-screen">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-4 py-4 shadow-sm">
@@ -97,6 +116,55 @@ export function SettingsView({
                 className="bocchi-checkbox h-5 w-5"
               />
             </label>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+            <LayoutList size={18} className="text-primary" />
+            <h2 className="font-medium text-foreground">投稿カードの並び順</h2>
+          </div>
+          <div className="space-y-2 p-5">
+            {postCardSectionOrder.map((section, index) => (
+              <div
+                key={section}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-secondary px-4 py-3"
+              >
+                <span className="text-sm font-medium text-foreground">
+                  {POST_CARD_SECTION_LABELS[section]}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => movePostCardSection(section, -1)}
+                    disabled={index === 0}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-35"
+                    aria-label={`${POST_CARD_SECTION_LABELS[section]}を上へ`}
+                    title="上へ"
+                  >
+                    <ArrowUp size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => movePostCardSection(section, 1)}
+                    disabled={index === postCardSectionOrder.length - 1}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-35"
+                    aria-label={`${POST_CARD_SECTION_LABELS[section]}を下へ`}
+                    title="下へ"
+                  >
+                    <ArrowDown size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => onPostCardSectionOrderChange(DEFAULT_POST_CARD_SECTION_ORDER)}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            >
+              <RotateCcw size={16} />
+              初期順に戻す
+            </button>
           </div>
         </section>
 

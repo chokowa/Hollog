@@ -480,7 +480,7 @@ export function CalendarView({
           ) : (
             <div className="mt-3 flex flex-col gap-2 pb-4">
               {selectedPosts.map((post) => {
-                const imageUrl = postThumbnailUrlMap[post.id]?.[0];
+                const imageUrl = postThumbnailUrlMap[post.id]?.[0] ?? post.ogp?.image ?? "";
                 return (
                   <article
                     key={post.id}

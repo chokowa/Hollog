@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ChevronLeft, ChevronRight, Trash2, ZoomIn } from "lucide-react";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { PostCard } from "@/components/ui/post-card";
+import { TagContextMenu, type TagContextAction } from "@/components/ui/tag-context-menu";
 import { TabSwitcher } from "@/components/ui/tab-switcher";
 import type { AvailableTag } from "@/hooks/use-posts";
+import type { PostCardSection } from "@/lib/post-card-layout";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { Post, PostType, TimelineFilter } from "@/types/post";
 
@@ -16,6 +18,8 @@ type PostFeedProps = {
   activeTag: string | null;
   availableTags: AvailableTag[];
   onTagChange: (tag: string | null) => void;
+  onTagMenuAction: (action: TagContextAction, tag: string) => void;
+  hasMediaForTag: (tag: string) => boolean;
   postImageUrlMap: Record<string, string[]>;
   postThumbnailUrlMap: Record<string, string[]>;
   onPostClick: (postId: string) => void;
@@ -31,6 +35,7 @@ type PostFeedProps = {
   onImageViewerOpen: (route: ImageViewerRoute, originRect?: ImageOriginRect | null) => void;
   onImageViewerClose: () => void;
   isBooting: boolean;
+  postCardSectionOrder: PostCardSection[];
   header?: ReactNode;
 };
 
@@ -266,6 +271,8 @@ export function PostFeed({
   activeTag,
   availableTags,
   onTagChange,
+  onTagMenuAction,
+  hasMediaForTag,
   postImageUrlMap,
   postThumbnailUrlMap,
   onPostClick,
@@ -281,6 +288,7 @@ export function PostFeed({
   onImageViewerOpen,
   onImageViewerClose,
   isBooting,
+  postCardSectionOrder,
   header,
 }: PostFeedProps) {
   const tagScrollRef = useRef<HTMLDivElement>(null);
@@ -330,6 +338,9 @@ export function PostFeed({
   const hasMoreItems = visibleItemCount < totalItemCount;
   const deleteTimersRef = useRef(new Map<string, number>());
   const latestPendingPost = latestPendingDeleteId ? pendingDeletedPosts[latestPendingDeleteId] : null;
+  const [tagMenuState, setTagMenuState] = useState<{ tag: string; left: number; top: number; hidden: boolean } | null>(null);
+  const tagLongPressTimerRef = useRef<number | null>(null);
+  const suppressTagClickRef = useRef<string | null>(null);
   const orderedTags = useMemo(() => {
     if (!activeTag) return availableTags;
     const activeTagSummary = availableTags.find((tag) => tag.name === activeTag);
@@ -449,6 +460,17 @@ export function PostFeed({
   }, [orderedTags]);
 
   useEffect(() => {
+    if (!tagMenuState) return;
+    const closeMenu = () => setTagMenuState(null);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [tagMenuState]);
+
+  useEffect(() => {
     const handleTimelineTop = () => animateTimelineTopFromNearTop();
     window.addEventListener("bocchi:timeline-top", handleTimelineTop);
     return () => window.removeEventListener("bocchi:timeline-top", handleTimelineTop);
@@ -520,11 +542,50 @@ export function PostFeed({
                   <button
                     key={tag.name}
                     type="button"
-                    onClick={() => handleTagChange(activeTag === tag.name ? null : tag.name)}
+                    onClick={() => {
+                      if (suppressTagClickRef.current === tag.name) {
+                        suppressTagClickRef.current = null;
+                        return;
+                      }
+                      handleTagChange(activeTag === tag.name ? null : tag.name);
+                    }}
+                    onPointerDown={(event) => {
+                      const target = event.currentTarget;
+                      if (tagLongPressTimerRef.current !== null) {
+                        window.clearTimeout(tagLongPressTimerRef.current);
+                      }
+                      tagLongPressTimerRef.current = window.setTimeout(() => {
+                        suppressTagClickRef.current = tag.name;
+                        const rect = target.getBoundingClientRect();
+                        const menuWidth = 192;
+                        const menuHeight = 248;
+                        const gap = 8;
+                        const left = Math.max(gap, Math.min(rect.left, window.innerWidth - menuWidth - gap));
+                        const top = rect.bottom + menuHeight + gap < window.innerHeight
+                          ? rect.bottom + gap
+                          : Math.max(gap, rect.top - menuHeight - gap);
+                        setTagMenuState({ tag: tag.name, left, top, hidden: Boolean(tag.hidden) });
+                        tagLongPressTimerRef.current = null;
+                      }, 420);
+                    }}
+                    onPointerUp={() => {
+                      if (tagLongPressTimerRef.current !== null) {
+                        window.clearTimeout(tagLongPressTimerRef.current);
+                        tagLongPressTimerRef.current = null;
+                      }
+                    }}
+                    onPointerLeave={() => {
+                      if (tagLongPressTimerRef.current !== null) {
+                        window.clearTimeout(tagLongPressTimerRef.current);
+                        tagLongPressTimerRef.current = null;
+                      }
+                    }}
                     className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                       activeTag === tag.name
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+                        : tag.hidden
+                          ? "border-border bg-card text-muted-foreground/45 hover:bg-muted"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
                   >
                     <span>#{tag.name}</span>
@@ -539,6 +600,15 @@ export function PostFeed({
                   </button>
                 ))}
               </div>
+              <TagContextMenu
+                tag={tagMenuState?.tag ?? ""}
+                isOpen={Boolean(tagMenuState)}
+                position={tagMenuState ? { left: tagMenuState.left, top: tagMenuState.top } : null}
+                hasMedia={tagMenuState ? hasMediaForTag(tagMenuState.tag) : false}
+                hidden={Boolean(tagMenuState?.hidden)}
+                onClose={() => setTagMenuState(null)}
+                onAction={onTagMenuAction}
+              />
               {canScrollRight && (
                 <button
                   type="button"
@@ -647,9 +717,13 @@ export function PostFeed({
                           onCopy={onPostCopy}
                           onSaveMedia={onPostSaveMedia}
                           onTagClick={handleTagChange}
+                          onTagMenuAction={onTagMenuAction}
+                          isTagHidden={(tag) => Boolean(availableTags.find((item) => item.name === tag)?.hidden)}
+                          hasMediaForTag={hasMediaForTag}
                           onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
                           onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
                           onOgpRetry={onPostOgpRetry}
+                          sectionOrder={postCardSectionOrder}
                           onImageOpen={(clickedPost, index, originRect) => {
                             onImageViewerOpen({ kind: "post", postId: clickedPost.id, index }, originRect);
                           }}

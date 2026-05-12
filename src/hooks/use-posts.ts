@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Capacitor } from "@capacitor/core";
+import { readHiddenTags, writeHiddenTags } from "@/lib/hidden-tags";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { postsRepository } from "@/lib/postsRepository";
@@ -30,6 +31,7 @@ export type PostFormValue = {
 export type AvailableTag = {
   name: string;
   count: number;
+  hidden?: boolean;
 };
 
 type CreatePostOptions = {
@@ -228,6 +230,7 @@ export function usePosts() {
       return false;
     }
   });
+  const [hiddenTags, setHiddenTagsState] = useState<string[]>(readHiddenTags);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string>("");
@@ -352,8 +355,21 @@ export function usePosts() {
     } catch {}
   }, []);
 
+  const setHiddenTags = useCallback((nextTags: string[]) => {
+    setHiddenTagsState(writeHiddenTags(nextTags));
+  }, []);
+
+  const toggleHiddenTag = useCallback((tag: string) => {
+    setHiddenTagsState((current) => {
+      const next = current.includes(tag)
+        ? current.filter((item) => item !== tag)
+        : [...current, tag];
+      return writeHiddenTags(next);
+    });
+  }, []);
+
   // フィルタリング
-  const tabFilteredPosts = useMemo(() => {
+  const tabBasePosts = useMemo(() => {
     switch (activeTab) {
       case "post":
         return posts.filter((p) =>
@@ -369,17 +385,28 @@ export function usePosts() {
     }
   }, [posts, activeTab, hidePostedInSourceTabs]);
 
+  const tabFilteredPosts = useMemo(() => {
+    if (hiddenTags.length === 0) return tabBasePosts;
+    const hiddenTagSet = new Set(hiddenTags);
+    return tabBasePosts.filter((post) => !post.tags.some((tag) => hiddenTagSet.has(tag)));
+  }, [hiddenTags, tabBasePosts]);
+
   const availableTags = useMemo(() => {
     const tagCounts = new Map<string, number>();
-    tabFilteredPosts.forEach((post) => {
+    tabBasePosts.forEach((post) => {
       post.tags.forEach((tag) => {
         tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
       });
     });
     return Array.from(tagCounts.entries())
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"))
-      .map(([name, count]) => ({ name, count }));
-  }, [tabFilteredPosts]);
+      .sort((a, b) => {
+        const leftHidden = hiddenTags.includes(a[0]);
+        const rightHidden = hiddenTags.includes(b[0]);
+        if (leftHidden !== rightHidden) return leftHidden ? 1 : -1;
+        return b[1] - a[1] || a[0].localeCompare(b[0], "ja");
+      })
+      .map(([name, count]) => ({ name, count, hidden: hiddenTags.includes(name) }));
+  }, [hiddenTags, tabBasePosts]);
 
   const visiblePosts = useMemo(() => {
     const tagFilteredPosts = activeTag
@@ -402,13 +429,13 @@ export function usePosts() {
 
 
   useEffect(() => {
-    if (activeTag && !availableTags.some((tag) => tag.name === activeTag)) {
+    if (activeTag && (!availableTags.some((tag) => tag.name === activeTag) || hiddenTags.includes(activeTag))) {
       const syncTimer = setTimeout(() => {
         setActiveTag(null);
       }, 0);
       return () => clearTimeout(syncTimer);
     }
-  }, [activeTag, availableTags]);
+  }, [activeTag, availableTags, hiddenTags]);
 
   // 画像URL管理
   const postImageUrlMap = useMemo(() => {
@@ -635,11 +662,32 @@ export function usePosts() {
     }
   };
 
+  const deletePostsByTag = async (tag: string) => {
+    setIsBusy(true);
+    try {
+      const targetPosts = posts.filter((post) => post.tags.includes(tag));
+      await Promise.all(targetPosts.map((post) => postsRepository.delete(post.id)));
+      postsMutationVersionRef.current += 1;
+      const deletedIds = new Set(targetPosts.map((post) => post.id));
+      setPosts((prev) => prev.filter((post) => !deletedIds.has(post.id)));
+      setStatusMessage(`${targetPosts.length}件の投稿を削除しました。`);
+      return targetPosts.length;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete tagged posts");
+      return 0;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return {
     posts,
     visiblePosts,
     hidePostedInSourceTabs,
     setHidePostedInSourceTabs,
+    hiddenTags,
+    setHiddenTags,
+    toggleHiddenTag,
     activeTab,
     setActiveTab,
     activeTag,
@@ -661,6 +709,7 @@ export function usePosts() {
     updatePostStatus,
     updatePostOgp,
     bulkUpdatePostTags,
+    deletePostsByTag,
     deletePost,
     fromPost,
     emptyForm,

@@ -123,6 +123,13 @@ public class BocchiMediaPlugin extends Plugin {
         call.resolve(response);
     }
 
+    @PluginMethod
+    public void readClipboardText(PluginCall call) {
+        JSObject response = new JSObject();
+        response.put("text", readClipboardTextValue());
+        call.resolve(response);
+    }
+
     private void addPickedImage(JSArray items, Uri uri, int index) {
         if (uri == null) return;
         try {
@@ -174,6 +181,30 @@ public class BocchiMediaPlugin extends Plugin {
             }
             items.put(item);
         } catch (Exception ignored) {
+        }
+    }
+
+    private String readClipboardTextValue() {
+        try {
+            ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clipData = clipboard == null ? null : clipboard.getPrimaryClip();
+            if (clipData == null) return "";
+
+            StringBuilder builder = new StringBuilder();
+            int count = Math.min(clipData.getItemCount(), 8);
+            for (int index = 0; index < count; index++) {
+                CharSequence text = clipData.getItemAt(index).coerceToText(getContext());
+                if (text != null) {
+                    String value = text.toString().trim();
+                    if (!value.isEmpty()) {
+                        if (builder.length() > 0) builder.append("\n");
+                        builder.append(value);
+                    }
+                }
+            }
+            return builder.toString();
+        } catch (Exception ignored) {
+            return "";
         }
     }
 

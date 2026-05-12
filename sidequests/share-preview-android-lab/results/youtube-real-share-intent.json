@@ -1,0 +1,18 @@
+{
+  "receivedAt": 1778564556331,
+  "action": "android.intent.action.SEND",
+  "type": "text\/plain",
+  "categories": [],
+  "extras": {
+    "android.intent.extra.SUBJECT": "300人捕食したのにいまだ捕獲されていない伝説の人喰いワニ「ギュスターブ」【自然】",
+    "android.intent.extra.TEXT": "https:\/\/youtube.com\/watch?v=bdqKeHiHcb0"
+  },
+  "clipData": [
+    {
+      "text": "https:\/\/youtube.com\/watch?v=bdqKeHiHcb0",
+      "htmlText": "",
+      "uri": "",
+      "intent": ""
+    }
+  ]
+}

@@ -25,6 +25,9 @@ type TagManagerViewProps = {
   postThumbnailUrlMap: Record<string, string[]>;
   existingTags: string[];
   onBulkUpdatePostTags: (postIds: string[], tags: string[], mode: "append" | "replace") => Promise<Post[] | null>;
+  initialActiveTab?: ManagerTab;
+  initialPostTagFilter?: string;
+  initialUntaggedOnly?: boolean;
 };
 
 type ManagerTab = "catalog" | "bulk";
@@ -76,8 +79,11 @@ export function TagManagerView({
   postThumbnailUrlMap,
   existingTags,
   onBulkUpdatePostTags,
+  initialActiveTab = "catalog",
+  initialPostTagFilter = "__all__",
+  initialUntaggedOnly = true,
 }: TagManagerViewProps) {
-  const [activeTab, setActiveTab] = useState<ManagerTab>("catalog");
+  const [activeTab, setActiveTab] = useState<ManagerTab>(initialActiveTab);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>(() => uniqueTags(readTagSuggestions()));
   const [newTag, setNewTag] = useState("");
   const [editingTag, setEditingTag] = useState<string | null>(null);
@@ -87,9 +93,9 @@ export function TagManagerView({
   const [tagQuery, setTagQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [postTagFilter, setPostTagFilter] = useState<string>("__all__");
+  const [postTagFilter, setPostTagFilter] = useState<string>(initialPostTagFilter);
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
-  const [untaggedOnly, setUntaggedOnly] = useState(true);
+  const [untaggedOnly, setUntaggedOnly] = useState(initialUntaggedOnly);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [bulkMode, setBulkMode] = useState<BulkMode>("append");
@@ -272,7 +278,7 @@ export function TagManagerView({
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-secondary">
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-secondary">
       <header className="sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur">
         <div className="flex items-center justify-between px-4 py-4">
           <button
@@ -314,7 +320,7 @@ export function TagManagerView({
         </div>
       </header>
 
-      <div className="flex-1 p-4 sm:p-6">
+      <div className="flex-1 overflow-x-hidden p-4 sm:p-6">
         {activeTab === "catalog" ? (
           <section className="mx-auto max-w-4xl rounded-3xl border border-border bg-card shadow-sm">
             <div className="border-b border-border px-5 py-4">
@@ -458,7 +464,7 @@ export function TagManagerView({
             </div>
           </section>
         ) : (
-          <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="mx-auto flex min-w-0 max-w-6xl flex-col gap-4">
             <section className="rounded-3xl border border-border bg-card p-4 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -475,8 +481,8 @@ export function TagManagerView({
               </div>
             </section>
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)]">
-              <section className="rounded-3xl border border-border bg-card shadow-sm">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)]">
+              <section className="min-w-0 rounded-3xl border border-border bg-card shadow-sm">
                 <div className="border-b border-border px-5 py-4">
                   <h2 className="font-medium text-foreground">投稿を絞り込んで選ぶ</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -591,7 +597,7 @@ export function TagManagerView({
                   ) : (
                     filteredPosts.map((post) => {
                       const isSelected = selectedPostSet.has(post.id);
-                      const thumbnailUrl = postThumbnailUrlMap[post.id]?.[0];
+                      const thumbnailUrl = postThumbnailUrlMap[post.id]?.[0] ?? post.ogp?.image ?? "";
                       return (
                         <label
                           key={post.id}
@@ -655,7 +661,7 @@ export function TagManagerView({
                 </div>
               </section>
 
-              <section className="rounded-3xl border border-border bg-card shadow-sm">
+              <section className="min-w-0 rounded-3xl border border-border bg-card shadow-sm">
                 <div className="border-b border-border px-5 py-4">
                   <h2 className="font-medium text-foreground">タグを選ぶ</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -757,7 +763,7 @@ export function TagManagerView({
               </section>
             </div>
 
-            <section className="rounded-3xl border border-border bg-card shadow-sm">
+            <section className="min-w-0 rounded-3xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-5 py-4">
                 <h2 className="font-medium text-foreground">適用設定とプレビュー</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -765,8 +771,8 @@ export function TagManagerView({
                 </p>
               </div>
 
-              <div className="grid gap-4 p-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <div className="space-y-3">
+              <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="min-w-0 space-y-3">
                   {[
                     {
                       value: "append" as BulkMode,
@@ -795,7 +801,7 @@ export function TagManagerView({
                   ))}
                 </div>
 
-                <div className="space-y-3">
+                <div className="min-w-0 space-y-3">
                   <div className="flex items-center justify-between gap-3 rounded-2xl bg-secondary px-4 py-3">
                     <div>
                       <p className="text-sm font-medium text-foreground">変更プレビュー</p>

@@ -1,0 +1,17 @@
+{
+  "receivedAt": 1778564146111,
+  "action": "android.intent.action.SEND",
+  "type": "text\/plain",
+  "categories": [],
+  "extras": {
+    "android.intent.extra.TEXT": "https:\/\/www.instagram.com\/reel\/DXtIr8-E9OZ\/?igsh=MWZsZDN1NzdmbnZ6dg=="
+  },
+  "clipData": [
+    {
+      "text": "https:\/\/www.instagram.com\/reel\/DXtIr8-E9OZ\/?igsh=MWZsZDN1NzdmbnZ6dg==",
+      "htmlText": "",
+      "uri": "",
+      "intent": ""
+    }
+  ]
+}
