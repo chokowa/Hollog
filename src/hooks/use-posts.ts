@@ -556,10 +556,17 @@ export function usePosts() {
     }
   };
 
-  const updatePostOgp = async (post: Post, ogp: OgpPreview) => {
+  const updatePostOgp = async (post: Post, ogp: OgpPreview | undefined, ogpFetch?: Post["ogpFetch"]) => {
     if (!post.url) return null;
     try {
-      const updated = await postsRepository.updateOgp(post.id, ogp);
+      const updated = await postsRepository.update(
+        post.id,
+        {
+          ogp,
+          ogpFetch,
+        },
+        { touchUpdatedAt: false },
+      );
       postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
       return updated;

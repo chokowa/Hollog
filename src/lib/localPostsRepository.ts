@@ -99,6 +99,7 @@ function normalizePost(rawPost: LegacyPost): Post {
     body: rawPost.body ?? "",
     url: rawPost.url ?? undefined,
     ogp: rawPost.ogp,
+    ogpFetch: rawPost.ogpFetch,
     imageBlob: rawPost.imageBlob,
     imageBlobs,
     imageBlobIds,

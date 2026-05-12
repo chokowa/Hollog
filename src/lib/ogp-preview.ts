@@ -19,6 +19,10 @@ const CRAWLER_HEADERS = [
   },
 ].map((headers) => ({ ...BROWSER_HEADERS, ...headers })) as readonly (typeof BROWSER_HEADERS)[];
 
+type FetchOgpPreviewOptions = {
+  bypassCache?: boolean;
+};
+
 type YouTubeOEmbed = {
   title?: string;
   author_name?: string;
@@ -32,6 +36,41 @@ type XOEmbed = {
   provider_name?: string;
   url?: string;
 };
+
+type XApiTweet = {
+  text?: string;
+  author?: {
+    name?: string;
+    screen_name?: string;
+  };
+  media?: {
+    all?: { url?: string }[];
+    photos?: { url?: string }[];
+    mosaic?: {
+      formats?: {
+        jpeg?: string;
+        webp?: string;
+      };
+    };
+  };
+};
+
+type FXTwitterResponse = {
+  tweet?: XApiTweet;
+};
+
+type VXTwitterResponse = {
+  text?: string;
+  user_name?: string;
+  user_screen_name?: string;
+  combinedMediaUrl?: string | null;
+  mediaURLs?: string[];
+  media_extended?: { url?: string; thumbnail_url?: string }[];
+};
+
+function isFXTwitterTweet(data: XApiTweet | VXTwitterResponse): data is XApiTweet {
+  return "author" in data || "media" in data;
+}
 
 function getMetaContent(document: Document, names: string[]) {
   for (const name of names) {
@@ -255,6 +294,32 @@ function isExternalTweetLink(url: string) {
   }
 }
 
+function withCacheBust(requestUrl: string, bypassCache?: boolean) {
+  if (!bypassCache) return requestUrl;
+  const url = new URL(requestUrl);
+  url.searchParams.set("_bocchi_refresh", String(Date.now()));
+  return url.toString();
+}
+
+function withNoCacheHeaders<T extends Record<string, string>>(headers: T, bypassCache?: boolean) {
+  if (!bypassCache) return headers;
+  return {
+    ...headers,
+    "Cache-Control": "no-cache, no-store, max-age=0",
+    Pragma: "no-cache",
+  };
+}
+
+function extractXStatusId(url: string) {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/\/status\/(\d+)/) || parsed.pathname.match(/\/i\/status\/(\d+)/);
+    return match?.[1] ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function toYouTubeOgp(data: YouTubeOEmbed): OgpPreview | null {
   if (!data.title && !data.thumbnail_url) return null;
   return {
@@ -275,12 +340,46 @@ function toXOgp(data: XOEmbed): OgpPreview | null {
   };
 }
 
-async function fetchYouTubeOgp(url: string) {
+function toXApiOgp(data: XApiTweet | VXTwitterResponse | null | undefined): OgpPreview | null {
+  if (!data) return null;
+  const title = data.text ?? "";
+  let description = "";
+  let image = "";
+
+  if (isFXTwitterTweet(data)) {
+    description = [data.author?.name, data.author?.screen_name ? `@${data.author.screen_name}` : ""]
+      .filter(Boolean)
+      .join(" ");
+    image = data.media?.mosaic?.formats?.jpeg
+      || data.media?.photos?.find((media) => media.url)?.url
+      || data.media?.all?.find((media) => media.url)?.url
+      || "";
+  } else {
+    description = [data.user_name, data.user_screen_name ? `@${data.user_screen_name}` : ""]
+      .filter(Boolean)
+      .join(" ");
+    image = data.combinedMediaUrl
+      || data.mediaURLs?.find(Boolean)
+      || data.media_extended?.find((media) => media.url || media.thumbnail_url)?.url
+      || data.media_extended?.find((media) => media.url || media.thumbnail_url)?.thumbnail_url
+      || "";
+  }
+
+  return title || image
+    ? { title, description, siteName: "Twitter", image }
+    : null;
+}
+
+async function fetchYouTubeOgp(url: string, options?: FetchOgpPreviewOptions) {
   if (!isYouTubeUrl(url)) return null;
 
-  const oembedUrl = `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`;
+  const oembedUrl = withCacheBust(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`, options?.bypassCache);
   if (Capacitor.isNativePlatform()) {
-    const response = await CapacitorHttp.get({ url: oembedUrl, responseType: "json" });
+    const response = await CapacitorHttp.get({
+      url: oembedUrl,
+      responseType: "json",
+      headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+    });
     if (response.status < 200 || response.status >= 400) return null;
     const data = typeof response.data === "string"
       ? JSON.parse(response.data) as YouTubeOEmbed
@@ -288,26 +387,36 @@ async function fetchYouTubeOgp(url: string) {
     return toYouTubeOgp(data);
   }
 
-  const response = await fetch(oembedUrl);
+  const response = await fetch(oembedUrl, {
+    headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+    cache: options?.bypassCache ? "no-store" : "default",
+  });
   if (!response.ok) return null;
   return toYouTubeOgp(await response.json() as YouTubeOEmbed);
 }
 
-async function fetchXOEmbed(url: string) {
+async function fetchXOEmbed(url: string, options?: FetchOgpPreviewOptions) {
   if (!isXUrl(url)) return null;
 
-  const endpoint = `https://publish.x.com/oembed?omit_script=1&url=${encodeURIComponent(url)}`;
-  const fallbackEndpoint = `https://publish.twitter.com/oembed?omit_script=1&url=${encodeURIComponent(url)}`;
+  const endpoint = withCacheBust(`https://publish.x.com/oembed?omit_script=1&url=${encodeURIComponent(url)}`, options?.bypassCache);
+  const fallbackEndpoint = withCacheBust(`https://publish.twitter.com/oembed?omit_script=1&url=${encodeURIComponent(url)}`, options?.bypassCache);
   const fetchJson = async (requestUrl: string) => {
     if (Capacitor.isNativePlatform()) {
-      const response = await CapacitorHttp.get({ url: requestUrl, responseType: "json" });
+      const response = await CapacitorHttp.get({
+        url: requestUrl,
+        responseType: "json",
+        headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+      });
       if (response.status < 200 || response.status >= 400) return null;
       return typeof response.data === "string"
         ? JSON.parse(response.data) as XOEmbed
         : response.data as XOEmbed;
     }
 
-    const response = await fetch(requestUrl);
+    const response = await fetch(requestUrl, {
+      headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+      cache: options?.bypassCache ? "no-store" : "default",
+    });
     if (!response.ok) return null;
     return await response.json() as XOEmbed;
   };
@@ -315,21 +424,63 @@ async function fetchXOEmbed(url: string) {
   return await fetchJson(endpoint) ?? await fetchJson(fallbackEndpoint);
 }
 
-async function fetchXOgp(url: string) {
-  const data = await fetchXOEmbed(url);
-  if (!data) return null;
+async function fetchXApiOgp(url: string, options?: FetchOgpPreviewOptions) {
+  const id = extractXStatusId(url);
+  if (!id) return null;
+
+  const fetchJson = async <T,>(requestUrl: string) => {
+    const finalUrl = withCacheBust(requestUrl, options?.bypassCache);
+    if (Capacitor.isNativePlatform()) {
+      const response = await CapacitorHttp.get({
+        url: finalUrl,
+        responseType: "json",
+        headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+      });
+      if (response.status < 200 || response.status >= 400) return null;
+      return typeof response.data === "string"
+        ? JSON.parse(response.data) as T
+        : response.data as T;
+    }
+
+    const response = await fetch(finalUrl, {
+      headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+      cache: options?.bypassCache ? "no-store" : "default",
+    });
+    if (!response.ok) return null;
+    return await response.json() as T;
+  };
+
+  const fxData = await fetchJson<FXTwitterResponse>(`https://api.fxtwitter.com/status/${id}`);
+  const fxOgp = toXApiOgp(fxData?.tweet);
+  if (fxOgp?.image) return fxOgp;
+
+  const vxData = await fetchJson<VXTwitterResponse>(`https://api.vxtwitter.com/Twitter/status/${id}`);
+  return toXApiOgp(vxData) ?? fxOgp;
+}
+
+async function fetchXOgp(url: string, options?: FetchOgpPreviewOptions) {
+  const apiOgp = await fetchXApiOgp(url, options);
+  const data = await fetchXOEmbed(url, options);
+  const tweetPageOgp = await fetchOgpViaNativeHttp(url, options) ?? await fetchOgpViaApi(url, options);
+  if (!data) return apiOgp ?? tweetPageOgp;
 
   const externalUrl = data.html
     ? extractLinksFromHtml(data.html).find(isExternalTweetLink)
     : undefined;
   const externalOgp = externalUrl
-    ? await fetchOgpViaNativeHttp(externalUrl) ?? await fetchOgpViaApi(externalUrl)
+    ? await fetchOgpViaNativeHttp(externalUrl, options) ?? await fetchOgpViaApi(externalUrl, options)
     : null;
+  const tweetOgp = toXOgp(data);
 
-  return externalOgp ?? toXOgp(data);
+  if (apiOgp?.image) return apiOgp;
+  if (apiOgp && tweetOgp) return { ...tweetOgp, ...apiOgp };
+  if (tweetPageOgp?.image && tweetOgp) return { ...tweetOgp, image: tweetPageOgp.image };
+  if (tweetPageOgp?.image) return tweetPageOgp;
+  if (externalOgp?.image && tweetOgp) return { ...tweetOgp, image: externalOgp.image };
+  return tweetOgp ?? apiOgp ?? tweetPageOgp ?? externalOgp;
 }
 
-async function fetchOgpViaNativeHttp(url: string) {
+async function fetchOgpViaNativeHttp(url: string, options?: FetchOgpPreviewOptions) {
   if (!Capacitor.isNativePlatform()) return null;
 
   const isAmazon = isAmazonUrl(url);
@@ -340,7 +491,7 @@ async function fetchOgpViaNativeHttp(url: string) {
     const response = await CapacitorHttp.get({
       url,
       responseType: "text",
-      headers,
+      headers: withNoCacheHeaders({ ...headers }, options?.bypassCache),
     });
     if (response.status < 200 || response.status >= 400 || typeof response.data !== "string") {
       continue;
@@ -375,17 +526,21 @@ async function fetchOgpViaNativeHttp(url: string) {
   return null;
 }
 
-async function fetchOgpViaApi(url: string) {
+async function fetchOgpViaApi(url: string, options?: FetchOgpPreviewOptions) {
   if (!OGP_API_BASE_URL) return null;
 
-  const response = await fetch(`${OGP_API_BASE_URL}/api/ogp?url=${encodeURIComponent(url)}`);
+  const requestUrl = withCacheBust(`${OGP_API_BASE_URL}/api/ogp?url=${encodeURIComponent(url)}`, options?.bypassCache);
+  const response = await fetch(requestUrl, {
+    headers: withNoCacheHeaders({ ...BROWSER_HEADERS }, options?.bypassCache),
+    cache: options?.bypassCache ? "no-store" : "default",
+  });
   if (!response.ok) return null;
 
   const data = await response.json() as OgpPreview;
   return data.title || data.image ? data : null;
 }
 
-export async function fetchOgpPreview(url: string): Promise<OgpPreview | null> {
+export async function fetchOgpPreview(url: string, options?: FetchOgpPreviewOptions): Promise<OgpPreview | null> {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) return null;
 
@@ -396,10 +551,10 @@ export async function fetchOgpPreview(url: string): Promise<OgpPreview | null> {
   }
 
   try {
-    return await fetchYouTubeOgp(trimmedUrl)
-      ?? await fetchXOgp(trimmedUrl)
-      ?? await fetchOgpViaNativeHttp(trimmedUrl)
-      ?? await fetchOgpViaApi(trimmedUrl);
+    return await fetchYouTubeOgp(trimmedUrl, options)
+      ?? await fetchXOgp(trimmedUrl, options)
+      ?? await fetchOgpViaNativeHttp(trimmedUrl, options)
+      ?? await fetchOgpViaApi(trimmedUrl, options);
   } catch {
     return null;
   }

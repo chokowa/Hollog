@@ -25,6 +25,15 @@ export type OgpPreview = {
   siteName?: string | null;
 };
 
+export type OgpFetchStatus = "pending" | "complete" | "exhausted";
+
+export type OgpFetchState = {
+  attemptCount: number;
+  lastAttemptAt?: string;
+  nextRetryAt?: string | null;
+  status?: OgpFetchStatus;
+};
+
 export type Post = {
   id: string;
   type: PostType;
@@ -32,6 +41,7 @@ export type Post = {
   body: string;
   url?: string;
   ogp?: OgpPreview;
+  ogpFetch?: OgpFetchState;
   imageBlob?: Blob;
   imageBlobs?: Blob[];
   imageBlobIds?: string[];

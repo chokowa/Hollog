@@ -54,12 +54,22 @@ public class MainActivity extends BridgeActivity {
         String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
         String title = intent.getStringExtra(Intent.EXTRA_TITLE);
         String htmlText = intent.getStringExtra(Intent.EXTRA_HTML_TEXT);
+        String sourceUrl = firstNonBlank(
+            readStringExtra(intent, "url"),
+            readStringExtra(intent, "sourceUrl"),
+            readStringExtra(intent, "shareUrl")
+        );
+        String previewImageUrl = firstNonBlank(
+            readStringExtra(intent, "imgUrl"),
+            readStringExtra(intent, "imageUrl"),
+            readStringExtra(intent, "thumbnailUrl")
+        );
         String clipText = readTextFromClipData(intent);
         if (isBlank(text)) {
             text = firstNonBlank(htmlText, clipText);
         }
         JSONArray images = readSharedImages(intent, action, type);
-        if (isBlank(text) && isBlank(subject) && isBlank(title) && images.length() == 0) {
+        if (isBlank(text) && isBlank(subject) && isBlank(title) && isBlank(sourceUrl) && isBlank(previewImageUrl) && images.length() == 0) {
             consumeShareIntent(intent);
             initialShareIntentPending = false;
             return;
@@ -71,6 +81,8 @@ public class MainActivity extends BridgeActivity {
             payload.put("subject", subject == null ? "" : subject);
             payload.put("title", title == null ? "" : title);
             payload.put("htmlText", htmlText == null ? "" : htmlText);
+            payload.put("sourceUrl", sourceUrl == null ? "" : sourceUrl);
+            payload.put("previewImageUrl", previewImageUrl == null ? "" : previewImageUrl);
             payload.put("clipText", clipText == null ? "" : clipText);
             payload.put("images", images);
         } catch (JSONException ignored) {
@@ -105,6 +117,7 @@ public class MainActivity extends BridgeActivity {
 
     private JSONArray readSharedImages(Intent intent, String action, String type) {
         JSONArray images = new JSONArray();
+
         if (type == null || !type.startsWith("image/")) {
             return images;
         }
@@ -115,7 +128,7 @@ public class MainActivity extends BridgeActivity {
                 Uri uri = intent.getClipData().getItemAt(index).getUri();
                 addImageData(images, uri, type);
             }
-            if (images.length() > 0 || Intent.ACTION_SEND.equals(action)) {
+            if (images.length() > 0) {
                 return images;
             }
         }
@@ -138,7 +151,10 @@ public class MainActivity extends BridgeActivity {
         try {
             String mimeType = getContentResolver().getType(uri);
             if (mimeType == null || !mimeType.startsWith("image/")) {
-                mimeType = fallbackType != null && fallbackType.startsWith("image/") ? fallbackType : "image/jpeg";
+                if (fallbackType == null || !fallbackType.startsWith("image/")) {
+                    return;
+                }
+                mimeType = fallbackType;
             }
             JSONObject image = new JSONObject();
             String storage = isDeviceMediaUri(uri) ? "device-reference" : "app-local-copy";
@@ -277,6 +293,15 @@ public class MainActivity extends BridgeActivity {
             }
         }
         return "";
+    }
+
+    private String readStringExtra(Intent intent, String key) {
+        try {
+            String value = intent.getStringExtra(key);
+            return value == null ? "" : value;
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private String readTextFromClipData(Intent intent) {

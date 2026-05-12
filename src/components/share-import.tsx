@@ -36,6 +36,7 @@ type ShareImportProps = {
   onNativeImagesSelect?: () => void;
   onNativeClipboardImagesSelect?: () => void;
   onAdditionalMediaRemove?: (mediaRefId: string) => void;
+  initialOgp?: OgpPreview;
 };
 
 type SharedImagePreview = {
@@ -47,6 +48,41 @@ type SharedImagePreview = {
 };
 
 type SaveDestination = "clip" | "post";
+
+function isAmazonUrl(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname === "amazon.co.jp"
+      || hostname.endsWith(".amazon.co.jp")
+      || hostname === "amzn.to"
+      || hostname === "amzn.asia";
+  } catch {
+    return false;
+  }
+}
+
+function mergeIntentAndFetchedOgp(fetchedOgp: OgpPreview | null, intentOgp: OgpPreview | null, url: string) {
+  if (!fetchedOgp) return intentOgp;
+  if (!intentOgp) return fetchedOgp;
+
+  const fetchedTitle = fetchedOgp.title?.trim() ?? "";
+  const intentTitle = intentOgp.title?.trim() ?? "";
+  const fetchedSiteName = fetchedOgp.siteName?.trim() ?? "";
+  const fetchedTitleLooksGeneric = Boolean(
+    intentTitle
+    && fetchedTitle
+    && fetchedSiteName
+    && fetchedTitle.toLowerCase() === fetchedSiteName.toLowerCase(),
+  );
+
+  return {
+    ...fetchedOgp,
+    title: fetchedTitleLooksGeneric ? intentOgp.title : fetchedOgp.title || intentOgp.title,
+    description: fetchedOgp.description || intentOgp.description,
+    image: isAmazonUrl(url) ? fetchedOgp.image || intentOgp.image : intentOgp.image || fetchedOgp.image,
+    siteName: fetchedOgp.siteName || intentOgp.siteName,
+  };
+}
 
 export function ShareImport({
   onBack,
@@ -61,6 +97,7 @@ export function ShareImport({
   onNativeImagesSelect,
   onNativeClipboardImagesSelect,
   onAdditionalMediaRemove,
+  initialOgp,
 }: ShareImportProps) {
   const initialTags = readSystemTaggingEnabled() ? getSystemTagsForUrl(initialUrl) : [];
   const [url, setUrl] = useState(initialUrl);
@@ -74,7 +111,7 @@ export function ShareImport({
   const [removedAutoTags, setRemovedAutoTags] = useState<string[]>([]);
   const [saveDestination, setSaveDestination] = useState<SaveDestination>("clip");
   const [isPreparingImages, setIsPreparingImages] = useState(false);
-  const [ogp, setOgp] = useState<OgpPreview | null>(null);
+  const [ogp, setOgp] = useState<OgpPreview | null>(initialOgp ?? null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [brokenPreviewIds, setBrokenPreviewIds] = useState<Set<string>>(() => new Set());
   const ogpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,10 +150,11 @@ export function ShareImport({
 
   const fetchOgp = useCallback(async (targetUrl: string) => {
     if (!targetUrl || lastFetchedUrl.current === targetUrl) return;
+    const fallbackOgp = targetUrl.trim() === initialUrl.trim() ? initialOgp ?? null : null;
     try {
       new URL(targetUrl);
     } catch {
-      setOgp(null);
+      setOgp(fallbackOgp);
       lastFetchedUrl.current = "";
       return;
     }
@@ -124,13 +162,13 @@ export function ShareImport({
     lastFetchedUrl.current = targetUrl;
     setOgpLoading(true);
     try {
-      setOgp(await fetchOgpPreview(targetUrl));
+      setOgp(mergeIntentAndFetchedOgp(await fetchOgpPreview(targetUrl), fallbackOgp, targetUrl));
     } catch {
-      setOgp(null);
+      setOgp(fallbackOgp);
     } finally {
       setOgpLoading(false);
     }
-  }, []);
+  }, [initialOgp, initialUrl]);
 
   useEffect(() => {
     if (ogpTimerRef.current) clearTimeout(ogpTimerRef.current);

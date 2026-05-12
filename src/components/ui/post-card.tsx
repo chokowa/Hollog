@@ -5,6 +5,7 @@ import { memo, useState, useEffect, useRef } from "react";
 import { Archive, Copy, Database, Download, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
+import { canAutoRetryOgp, isOgpIncomplete } from "@/lib/post-ogp";
 import type { ImageOriginRect } from "@/types/navigation";
 import type { OgpPreview, Post, PostType } from "@/types/post";
 
@@ -16,7 +17,8 @@ type PostCardProps = {
   onCopy?: (post: Post, copied: boolean) => void;
   onTagClick?: (tag: string) => void;
   onTypeChange?: (nextType: PostType) => void;
-  onOgpFetched?: (ogp: OgpPreview) => void;
+  onOgpFetched?: (ogp: OgpPreview | null) => void;
+  onOgpRetry?: (post: Post) => void;
   onImageOpen?: (post: Post, index: number, originRect: ImageOriginRect) => void;
   onSaveMedia?: (post: Post) => void;
   isDetail?: boolean;
@@ -75,7 +77,7 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
-function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClick, onTypeChange, onOgpFetched, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
+function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClick, onTypeChange, onOgpFetched, onOgpRetry, onImageOpen, onSaveMedia, isDetail = false }: PostCardProps) {
   const [fetchedOgp, setFetchedOgp] = useState<OgpPreview | null>(null);
   const [ogpLoading, setOgpLoading] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -124,7 +126,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
   }, [imageUrls, isDetail, shouldLoadImages]);
 
   useEffect(() => {
-    if (isDetail || !post.url || post.ogp || fetchedRef.current || shouldFetchOgp) return;
+    if (isDetail || !post.url || !canAutoRetryOgp(post) || fetchedRef.current || shouldFetchOgp) return;
     const article = articleRef.current;
     if (!article || !("IntersectionObserver" in window)) {
       setShouldFetchOgp(true);
@@ -143,7 +145,7 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
 
     observer.observe(article);
     return () => observer.disconnect();
-  }, [isDetail, post.ogp, post.url, shouldFetchOgp]);
+  }, [isDetail, post, post.url, shouldFetchOgp]);
 
   useEffect(() => {
     const blockClickAfterClose = (event: MouseEvent) => {
@@ -197,29 +199,31 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
 
   // OGP情報を取得
   useEffect(() => {
-    if (post.ogp) {
+    if (post.ogp && !isOgpIncomplete(post)) {
       fetchedRef.current = true;
       return;
     }
-    if (!shouldFetchOgp || !post.url || fetchedRef.current) return;
+    if (!shouldFetchOgp || !post.url || fetchedRef.current || !canAutoRetryOgp(post)) return;
     fetchedRef.current = true;
     (async () => {
       try {
         new URL(post.url!);
       } catch {
+        onOgpFetched?.(null);
         return;
       }
       setOgpLoading(true);
+      let data: OgpPreview | null = null;
       try {
-        const data = await fetchOgpPreview(post.url!);
+        data = await fetchOgpPreview(post.url!);
         if (data) {
           setFetchedOgp(data);
-          onOgpFetched?.(data);
         }
       } catch {}
+      onOgpFetched?.(data);
       setOgpLoading(false);
     })();
-  }, [post.ogp, post.url, onOgpFetched, shouldFetchOgp]);
+  }, [post, post.ogp, post.url, onOgpFetched, shouldFetchOgp]);
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -251,6 +255,12 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
     e.stopPropagation();
     setIsActionMenuOpen(false);
     onTypeChange?.(nextType);
+  };
+
+  const handleRetryOgp = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsActionMenuOpen(false);
+    onOgpRetry?.(post);
   };
 
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>, index: number) => {
@@ -534,11 +544,6 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
                 </div>
               )}
             </div>
-            {!isDetail && !post.tags?.length && (
-              <time className="shrink-0 text-[15px] text-muted-foreground">
-                {formatTime(post.updatedAt)}
-              </time>
-            )}
             <div ref={actionMenuRef} className="relative shrink-0">
               <button
                 type="button"
@@ -589,6 +594,16 @@ function PostCardComponent({ post, imageUrls, onClick, onEdit, onCopy, onTagClic
                       <Edit3 size={15} />
                       <span>編集</span>
                     </button>
+                    {post.url && onOgpRetry && (
+                      <button
+                        type="button"
+                        onClick={handleRetryOgp}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      >
+                        <Loader2 size={15} />
+                        <span>プレビューを再取得</span>
+                      </button>
+                    )}
                     {movableType && onTypeChange && (
                       <button
                         type="button"

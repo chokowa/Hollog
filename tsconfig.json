@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "figma-mcp-free", "temp_figma", "output"]
+  "exclude": ["node_modules", "figma-mcp-free", "temp_figma", "output", "sidequests"]
 }

@@ -23,7 +23,8 @@ type PostFeedProps = {
   onPostCopy: (post: Post, copied: boolean) => void;
   onPostSaveMedia: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
-  onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
+  onPostOgpFetched: (post: Post, ogp: Post["ogp"] | null) => void;
+  onPostOgpRetry: (post: Post) => void;
   onPostDelete: (postId: string) => Promise<boolean>;
   imageViewerRoute: ImageViewerRoute | null;
   imageViewerOriginRect: ImageOriginRect | null;
@@ -273,6 +274,7 @@ export function PostFeed({
   onPostSaveMedia,
   onPostTypeChange,
   onPostOgpFetched,
+  onPostOgpRetry,
   onPostDelete,
   imageViewerRoute,
   imageViewerOriginRect,
@@ -647,6 +649,7 @@ export function PostFeed({
                           onTagClick={handleTagChange}
                           onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
                           onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
+                          onOgpRetry={onPostOgpRetry}
                           onImageOpen={(clickedPost, index, originRect) => {
                             onImageViewerOpen({ kind: "post", postId: clickedPost.id, index }, originRect);
                           }}

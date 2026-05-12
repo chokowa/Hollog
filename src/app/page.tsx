@@ -25,6 +25,8 @@ import {
   type NativePickedMedia,
   type NativeSaveMediaItem,
 } from "@/lib/native-media-picker";
+import { fetchOgpPreview } from "@/lib/ogp-preview";
+import { buildNextOgpFetchState, canAutoRetryOgp, isOgpIncomplete, mergeOgpPreview, resetOgpFetchState } from "@/lib/post-ogp";
 import { createImageBlobId, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import { postTypeLabels } from "@/lib/post-labels";
 import { readSystemTaggingEnabled, writeSystemTaggingEnabled } from "@/lib/tag-suggestions";
@@ -46,6 +48,8 @@ type NativeSharePayload = {
   subject?: string;
   title?: string;
   htmlText?: string;
+  sourceUrl?: string;
+  previewImageUrl?: string;
   clipText?: string;
   images?: Array<{
     name?: string;
@@ -60,16 +64,74 @@ type NativeSharePayload = {
   }>;
 };
 
-const URL_PATTERN = /https?:\/\/[^\s<>"']+/;
+const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
 
 function extractSharedUrl(...values: string[]) {
   for (const value of values) {
-    const match = value.match(URL_PATTERN);
+    URL_PATTERN.lastIndex = 0;
+    const match = URL_PATTERN.exec(value);
     if (match?.[0]) {
-      return match[0].replace(/[)、。,\].!?]+$/, "");
+      return canonicalizeSharedUrl(match[0].replace(/[)、。,\].!?]+$/, ""));
     }
   }
   return "";
+}
+
+function removeSharedUrls(value: string) {
+  URL_PATTERN.lastIndex = 0;
+  return value.replace(URL_PATTERN, "").replace(/\s+/g, " ").trim();
+}
+
+function canonicalizeSharedUrl(value: string) {
+  try {
+    const url = new URL(value);
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (key === "igsh" || key === "fbclid" || key === "gclid" || key.startsWith("utm_")) {
+        url.searchParams.delete(key);
+      }
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function getShareSiteName(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    if (hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be") return "YouTube";
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "Instagram";
+    if (hostname === "x.com" || hostname === "twitter.com") return "X";
+    if (hostname === "amazon.co.jp" || hostname.endsWith(".amazon.co.jp") || hostname === "amzn.asia") return "Amazon";
+    return hostname;
+  } catch {
+    return "";
+  }
+}
+
+function buildIntentPreview({
+  url,
+  title,
+  description,
+  image,
+}: {
+  url: string;
+  title: string;
+  description: string;
+  image: string;
+}): OgpPreview | undefined {
+  const siteName = getShareSiteName(url);
+  const cleanTitle = title.trim();
+  const cleanDescription = description.trim();
+  const cleanImage = image.trim();
+  if (!cleanTitle && !cleanDescription && !cleanImage) return undefined;
+
+  return {
+    title: cleanTitle || undefined,
+    description: cleanDescription && cleanDescription !== cleanTitle ? cleanDescription : undefined,
+    image: cleanImage || undefined,
+    siteName: siteName || undefined,
+  };
 }
 
 type SharedImagePreview = {
@@ -83,6 +145,7 @@ type SharedImagePreview = {
 type PendingShareImport = {
   url: string;
   memo: string;
+  ogp?: OgpPreview;
   images: SharedImagePreview[];
   imageBlobs: Blob[];
   mediaRefs: PostMediaRef[];
@@ -202,11 +265,14 @@ function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   const subject = payload.subject?.trim() ?? "";
   const title = payload.title?.trim() ?? "";
   const htmlText = payload.htmlText?.trim() ?? "";
+  const sourceUrl = payload.sourceUrl?.trim() ?? "";
+  const previewImageUrl = payload.previewImageUrl?.trim() ?? "";
   const clipText = payload.clipText?.trim() ?? "";
-  const url = extractSharedUrl(text, subject, title, htmlText, clipText);
+  const url = extractSharedUrl(sourceUrl, text, clipText, htmlText, subject, title, previewImageUrl);
+  const textMemo = url ? removeSharedUrls(text || clipText) : text || clipText;
   const memoParts = [
     subject || title,
-    url ? text.replace(url, "").trim() : text || clipText,
+    textMemo,
   ].filter(Boolean);
 
   const images = (payload.images ?? [])
@@ -216,6 +282,12 @@ function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   return {
     url,
     memo: Array.from(new Set(memoParts)).join("\n"),
+    ogp: buildIntentPreview({
+      url,
+      title: title || subject,
+      description: textMemo,
+      image: previewImageUrl,
+    }),
     images,
     imageBlobs: [],
     mediaRefs: images.map((image) => image.mediaRef).filter((mediaRef): mediaRef is PostMediaRef => Boolean(mediaRef)),
@@ -287,9 +359,15 @@ export default function Home() {
   const quickCameraInputRef = useRef<HTMLInputElement | null>(null);
   const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
   const nativeShareDedupRef = useRef<{ key: string; receivedAt: number } | null>(null);
+  const ogpRefreshInFlightRef = useRef<Set<string>>(new Set());
+  const postsRef = useRef<Post[]>([]);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
   const showToast = useCallback((message: string, action?: AppToast["action"]) => {
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
@@ -414,6 +492,78 @@ export default function Home() {
     setShareDraftThumbnailBlobs(undefined);
   }, []);
 
+  const handlePostOgpFetchResult = useCallback(async (
+    post: Post,
+    fetchedOgp: OgpPreview | null | undefined,
+    mode: "merge" | "replace" = "merge",
+  ) => {
+    if (!post.url) return;
+    const latestPost = postsRef.current.find((current) => current.id === post.id) ?? post;
+    const resolvedOgp = mode === "replace"
+      ? (fetchedOgp ?? latestPost.ogp)
+      : mergeOgpPreview(latestPost.ogp, fetchedOgp);
+    const nextOgpFetch = buildNextOgpFetchState(latestPost, resolvedOgp);
+    const ogpChanged = JSON.stringify(resolvedOgp ?? {}) !== JSON.stringify(latestPost.ogp ?? {});
+    const fetchStateChanged = JSON.stringify(nextOgpFetch ?? {}) !== JSON.stringify(latestPost.ogpFetch ?? {});
+
+    if (ogpChanged || fetchStateChanged) {
+      await updatePostOgp(latestPost, resolvedOgp, nextOgpFetch);
+    }
+  }, [updatePostOgp]);
+
+  const queuePostOgpRefresh = useCallback((post: Post, delayMs = 0) => {
+    const latestPost = postsRef.current.find((current) => current.id === post.id) ?? post;
+    if (!latestPost.url || !canAutoRetryOgp(latestPost) || ogpRefreshInFlightRef.current.has(latestPost.id)) return;
+
+    const nextRetryAtMs = latestPost.ogpFetch?.nextRetryAt ? Date.parse(latestPost.ogpFetch.nextRetryAt) : NaN;
+    const effectiveDelay = Number.isNaN(nextRetryAtMs)
+      ? delayMs
+      : Math.max(delayMs, Math.max(0, nextRetryAtMs - Date.now()));
+
+    ogpRefreshInFlightRef.current.add(latestPost.id);
+    window.setTimeout(async () => {
+      const currentPost = postsRef.current.find((current) => current.id === latestPost.id);
+      if (!currentPost || !currentPost.url || !canAutoRetryOgp(currentPost)) {
+        ogpRefreshInFlightRef.current.delete(latestPost.id);
+        return;
+      }
+
+      try {
+        const refreshed = await fetchOgpPreview(currentPost.url);
+        await handlePostOgpFetchResult(currentPost, refreshed);
+      } catch {
+        await handlePostOgpFetchResult(currentPost, null);
+      } finally {
+        ogpRefreshInFlightRef.current.delete(latestPost.id);
+      }
+    }, effectiveDelay);
+  }, [handlePostOgpFetchResult]);
+
+  const handleRetryPostOgp = useCallback(async (post: Post) => {
+    if (!post.url) return;
+    if (ogpRefreshInFlightRef.current.has(post.id)) {
+      showToast("プレビューを再取得中です。");
+      return;
+    }
+
+    const resetPost = await updatePostOgp(post, post.ogp, resetOgpFetchState());
+    if (!resetPost) {
+      showToast("プレビューを再取得できませんでした。");
+      return;
+    }
+
+    showToast("プレビューを再取得します。");
+    ogpRefreshInFlightRef.current.add(resetPost.id);
+    try {
+      const refreshed = await fetchOgpPreview(resetPost.url!, { bypassCache: true });
+      await handlePostOgpFetchResult(resetPost, refreshed, "replace");
+    } catch {
+      await handlePostOgpFetchResult(resetPost, null, "replace");
+    } finally {
+      ogpRefreshInFlightRef.current.delete(resetPost.id);
+    }
+  }, [handlePostOgpFetchResult, showToast, updatePostOgp]);
+
   const finishShareFlow = useCallback((returnToSource: boolean) => {
     launchedFromShareRef.current = false;
     clearPendingShare();
@@ -425,7 +575,7 @@ export default function Home() {
 
     if (Capacitor.isNativePlatform() && returnToSource) {
       window.setTimeout(() => {
-        void CapacitorApp.minimizeApp();
+        void CapacitorApp.exitApp();
       }, 120);
     }
   }, [applyHistoryState, clearPendingShare, replaceHistoryState, scrollViewportToTop, setTimelineChromeHidden]);
@@ -633,7 +783,7 @@ export default function Home() {
       const customEvent = event as CustomEvent<NativeSharePayload>;
       const nextShare = parseSharedPayload(customEvent.detail ?? {});
       if (!nextShare.url && !nextShare.memo && nextShare.images.length === 0 && nextShare.imageBlobs.length === 0) return;
-      const shareKey = `${nextShare.url}\n${nextShare.memo}\n${nextShare.images.map((image) => `${image.name}:${image.type}:${image.previewUrl}`).join(",")}`;
+      const shareKey = `${nextShare.url}\n${nextShare.memo}\n${nextShare.ogp?.image ?? ""}\n${nextShare.images.map((image) => `${image.name}:${image.type}:${image.previewUrl}`).join(",")}`;
       const now = Date.now();
       const lastShare = nativeShareDedupRef.current;
       if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) return;
@@ -1133,7 +1283,7 @@ export default function Home() {
     mediaRefs?: PostMediaRef[];
     thumbnailBlobs?: Blob[];
   }) => {
-    const success = await createPost({
+    const created = await createPost({
       type: postData.type,
       body: postData.body,
       url: postData.url,
@@ -1143,13 +1293,26 @@ export default function Home() {
       mediaRefs: postData.mediaRefs,
       thumbnailBlobs: postData.thumbnailBlobs,
     }, Capacitor.isNativePlatform() && launchedFromShareRef.current ? { commit: "sync" } : undefined);
-    if (!success) return;
+    if (!created) return;
+    if (isOgpIncomplete(created)) {
+      queuePostOgpRefresh(created, 150);
+    }
     if (Capacitor.isNativePlatform() && launchedFromShareRef.current) {
       finishShareFlow(true);
       return;
     }
     replaceToHome();
   };
+
+  useEffect(() => {
+    if (activeView !== "home" || visiblePosts.length === 0) return;
+    visiblePosts
+      .slice(0, 12)
+      .filter(canAutoRetryOgp)
+      .forEach((post, index) => {
+        queuePostOgpRefresh(post, 250 + index * 120);
+      });
+  }, [activeView, queuePostOgpRefresh, visiblePosts]);
 
   const postViewerImages = imageViewerRoute?.kind === "post"
     ? postImageUrlMap[imageViewerRoute.postId]
@@ -1211,9 +1374,8 @@ export default function Home() {
             resetToHome(tag);
           }}
           onPostTypeChange={handlePostTypeChange}
-          onPostOgpFetched={(post, ogp) => {
-            if (ogp) updatePostOgp(post, ogp);
-          }}
+          onPostOgpFetched={handlePostOgpFetchResult}
+          onPostOgpRetry={handleRetryPostOgp}
           onImageOpen={(post, index, originRect) => {
             openImageViewer({ kind: "post", postId: post.id, index }, originRect);
           }}
@@ -1276,18 +1438,19 @@ export default function Home() {
           isBusy={isBusy}
           initialUrl={pendingShareImport?.url ?? ""}
           initialMemo={pendingShareImport?.memo ?? ""}
-        initialImagePreviews={pendingShareImport?.images ?? []}
-        initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
-        additionalMediaRefs={shareDraftMediaRefs}
-        additionalThumbnailBlobs={shareDraftThumbnailBlobs}
-        onNativeImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeImagesSelect : undefined}
-        onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeClipboardImagesSelect : undefined}
-        onAdditionalMediaRemove={(mediaRefId) => {
-          setShareDraftMediaRefs((current) => current.filter((mediaRef) => mediaRef.id !== mediaRefId));
-          setShareDraftThumbnailBlobs(undefined);
-        }}
-      />
-      {toastElement}
+          initialOgp={pendingShareImport?.ogp}
+          initialImagePreviews={pendingShareImport?.images ?? []}
+          initialImageBlobs={pendingShareImport?.imageBlobs ?? []}
+          additionalMediaRefs={shareDraftMediaRefs}
+          additionalThumbnailBlobs={shareDraftThumbnailBlobs}
+          onNativeImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeImagesSelect : undefined}
+          onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeClipboardImagesSelect : undefined}
+          onAdditionalMediaRemove={(mediaRefId) => {
+            setShareDraftMediaRefs((current) => current.filter((mediaRef) => mediaRef.id !== mediaRefId));
+            setShareDraftThumbnailBlobs(undefined);
+          }}
+        />
+        {toastElement}
       </main>
     );
   }
@@ -1356,9 +1519,8 @@ export default function Home() {
             }}
             onPostSaveMedia={handleSavePostMedia}
             onPostTypeChange={handlePostTypeChange}
-            onPostOgpFetched={(post, ogp) => {
-              if (ogp) updatePostOgp(post, ogp);
-            }}
+            onPostOgpFetched={handlePostOgpFetchResult}
+            onPostOgpRetry={handleRetryPostOgp}
             onPostDelete={deletePost}
             imageViewerRoute={imageViewerRoute}
             imageViewerOriginRect={imageViewerOriginRect}

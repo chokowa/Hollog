@@ -18,7 +18,8 @@ type PostDetailProps = {
   onDelete: () => void;
   onTagClick: (tag: string) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
-  onPostOgpFetched: (post: Post, ogp: Post["ogp"]) => void;
+  onPostOgpFetched: (post: Post, ogp: Post["ogp"] | null) => void;
+  onPostOgpRetry: (post: Post) => void;
   onImageOpen: (post: Post, index: number, originRect: ImageOriginRect) => void;
   isBusy?: boolean;
 };
@@ -37,6 +38,7 @@ export function PostDetail({
   onTagClick,
   onPostTypeChange,
   onPostOgpFetched,
+  onPostOgpRetry,
   onImageOpen,
   isBusy,
 }: PostDetailProps) {
@@ -67,6 +69,7 @@ export function PostDetail({
             onSaveMedia={onSaveMedia}
             onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
             onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
+            onOgpRetry={onPostOgpRetry}
             onImageOpen={onImageOpen}
           />
         </div>
