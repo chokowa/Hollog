@@ -1506,7 +1506,10 @@ export default function Home() {
           onBack={goBackOrHome}
           onCopyForX={handleCopyForX}
           onCardCopy={(_, copied) => {
-            showToast(copied ? "本文をコピーしました。" : "コピーできませんでした。");
+            showToast(copied ? "本文とURLをコピーしました。" : "コピーできませんでした。");
+          }}
+          onCardUrlCopy={(_, copied) => {
+            showToast(copied ? "URLをコピーしました。" : "コピーできませんでした。");
           }}
           onOpenX={handleOpenX}
           onMarkAsPosted={handleMarkAsPosted}
@@ -1669,7 +1672,10 @@ export default function Home() {
             onPostClick={openPostDetail}
             onPostEdit={openEditComposer}
             onPostCopy={(_, copied) => {
-              showToast(copied ? "本文をコピーしました。" : "コピーできませんでした。");
+              showToast(copied ? "本文とURLをコピーしました。" : "コピーできませんでした。");
+            }}
+            onPostUrlCopy={(_, copied) => {
+              showToast(copied ? "URLをコピーしました。" : "コピーできませんでした。");
             }}
             onPostSaveMedia={handleSavePostMedia}
             onPostTypeChange={handlePostTypeChange}

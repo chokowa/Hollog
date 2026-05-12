@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { memo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Copy, Database, Download, Edit3, Link as LinkIcon, Share, ExternalLink, Loader2, ArrowRightLeft, MoreHorizontal, type LucideIcon } from "lucide-react";
+import { Archive, Copy, Database, Download, Edit3, Link as LinkIcon, Share, Loader2, ArrowRightLeft, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import { DEFAULT_POST_CARD_SECTION_ORDER, type PostCardSection } from "@/lib/post-card-layout";
@@ -18,6 +18,7 @@ type PostCardProps = {
   onClick?: () => void;
   onEdit?: () => void;
   onCopy?: (post: Post, copied: boolean) => void;
+  onUrlCopy?: (post: Post, copied: boolean) => void;
   onTagClick?: (tag: string) => void;
   onTagMenuAction?: (action: TagContextAction, tag: string) => void;
   isTagHidden?: (tag: string) => boolean;
@@ -89,12 +90,17 @@ function renderBodyWithLinks(body: string) {
   });
 }
 
+function buildPostClipboardText(post: Post) {
+  return [post.body.trim(), post.url?.trim() ?? ""].filter(Boolean).join("\n");
+}
+
 function PostCardComponent({
   post,
   imageUrls,
   onClick,
   onEdit,
   onCopy,
+  onUrlCopy,
   onTagClick,
   onTagMenuAction,
   isTagHidden,
@@ -308,8 +314,15 @@ function PostCardComponent({
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsActionMenuOpen(false);
-    const copied = await copyTextToClipboard(post.body);
+    const copied = await copyTextToClipboard(buildPostClipboardText(post));
     onCopy?.(post, copied);
+  };
+
+  const handleCopyUrl = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!post.url) return;
+    const copied = await copyTextToClipboard(post.url);
+    onUrlCopy?.(post, copied);
   };
 
   const handleShare = (e: React.MouseEvent) => {
@@ -552,22 +565,30 @@ function PostCardComponent({
 
     return (
       <div className={isDetail ? "mb-4" : ""}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(post.url, "_blank", "noopener,noreferrer");
-          }}
-          className={compactUrlButtonClass}
-        >
-          <div className="flex items-start gap-2">
+        <div className={`${compactUrlButtonClass} relative`}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(post.url, "_blank", "noopener,noreferrer");
+            }}
+            className="flex min-w-0 w-full items-start gap-2 pr-8 text-left"
+          >
             <LinkIcon size={isDetail ? 16 : 15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <div className={`${isDetail ? "text-xs" : "text-[13px]"} truncate text-primary`}>{post.url}</div>
             </div>
-            <ExternalLink size={isDetail ? 14 : 13} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-          </div>
-        </button>
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyUrl}
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background/80 hover:text-foreground active:scale-95"
+            title="URLをコピー"
+            aria-label="URLをコピー"
+          >
+            <Copy size={isDetail ? 14 : 13} />
+          </button>
+        </div>
       </div>
     );
   };
@@ -649,7 +670,7 @@ function PostCardComponent({
           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <Copy size={15} />
-          <span>コピー</span>
+          <span>本文+URLをコピー</span>
         </button>
         <button
           type="button"
@@ -839,6 +860,7 @@ export const PostCard = memo(PostCardComponent, (prev, next) => (
   prev.post === next.post
   && prev.imageUrls === next.imageUrls
   && prev.onCopy === next.onCopy
+  && prev.onUrlCopy === next.onUrlCopy
   && prev.onTagMenuAction === next.onTagMenuAction
   && prev.isTagHidden === next.isTagHidden
   && prev.hasMediaForTag === next.hasMediaForTag

@@ -1,3 +1,5 @@
 node_modules/
 .lab-server.pid
+results/*
+!results/*.md
 *.log

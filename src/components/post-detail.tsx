@@ -11,6 +11,7 @@ type PostDetailProps = {
   onBack: () => void;
   onCopyForX: () => void;
   onCardCopy: (post: Post, copied: boolean) => void;
+  onCardUrlCopy: (post: Post, copied: boolean) => void;
   onOpenX: () => void;
   onMarkAsPosted: () => void;
   onEdit: () => void;
@@ -30,6 +31,7 @@ export function PostDetail({
   onBack,
   onCopyForX,
   onCardCopy,
+  onCardUrlCopy,
   onOpenX,
   onMarkAsPosted,
   onEdit,
@@ -65,6 +67,7 @@ export function PostDetail({
             isDetail={true}
             onEdit={onEdit}
             onCopy={onCardCopy}
+            onUrlCopy={onCardUrlCopy}
             onTagClick={onTagClick}
             onSaveMedia={onSaveMedia}
             onTypeChange={(nextType) => onPostTypeChange(post, nextType)}

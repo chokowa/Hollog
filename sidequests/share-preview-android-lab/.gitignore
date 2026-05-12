@@ -1,5 +1,7 @@
 /.gradle/
 /build/
 /app/build/
+results/*
+!results/*.md
 local.properties
 *.log
