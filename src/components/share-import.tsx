@@ -37,6 +37,7 @@ type ShareImportProps = {
   onNativeClipboardImagesSelect?: () => void;
   onAdditionalMediaRemove?: (mediaRefId: string) => void;
   initialOgp?: OgpPreview;
+  onSaveError?: (message: string) => void;
 };
 
 type SharedImagePreview = {
@@ -98,6 +99,7 @@ export function ShareImport({
   onNativeClipboardImagesSelect,
   onAdditionalMediaRemove,
   initialOgp,
+  onSaveError,
 }: ShareImportProps) {
   const initialTags = readSystemTaggingEnabled() ? getSystemTagsForUrl(initialUrl) : [];
   const [url, setUrl] = useState(initialUrl);
@@ -302,6 +304,7 @@ export function ShareImport({
         thumbnailBlobs: preparedThumbnailBlobs,
       });
     } catch {
+      onSaveError?.("保存できませんでした。");
       return;
     } finally {
       setIsPreparingImages(false);

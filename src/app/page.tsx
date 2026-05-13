@@ -1888,7 +1888,10 @@ export default function Home() {
       mediaRefs: postData.mediaRefs,
       thumbnailBlobs: postData.thumbnailBlobs,
     }, Capacitor.isNativePlatform() && launchedFromShareRef.current ? { commit: "sync" } : undefined);
-    if (!created) return;
+    if (!created) {
+      showToast("保存できませんでした。");
+      return;
+    }
     if (isOgpIncomplete(created)) {
       queuePostOgpRefresh(created, 150);
     }
@@ -2013,7 +2016,11 @@ export default function Home() {
                 { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) },
                 selectedPost.source,
               );
-              if (success) replaceToDetail(selectedPost.id);
+              if (success) {
+                replaceToDetail(selectedPost.id);
+              } else {
+                showToast("更新できませんでした。");
+              }
             } else {
               const nextValue = pendingTag
                 ? { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) }
@@ -2022,6 +2029,8 @@ export default function Home() {
               if (success) {
                 setComposerValue(emptyForm);
                 replaceToHome();
+              } else {
+                showToast("保存できませんでした。");
               }
             }
           }}
@@ -2066,6 +2075,7 @@ export default function Home() {
           additionalThumbnailBlobs={shareDraftThumbnailBlobs}
           onNativeImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeImagesSelect : undefined}
           onNativeClipboardImagesSelect={Capacitor.isNativePlatform() ? handleShareNativeClipboardImagesSelect : undefined}
+          onSaveError={showToast}
           onAdditionalMediaRemove={(mediaRefId) => {
             setShareDraftMediaRefs((current) => current.filter((mediaRef) => mediaRef.id !== mediaRefId));
             setShareDraftThumbnailBlobs(undefined);
@@ -2271,7 +2281,11 @@ export default function Home() {
               { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) },
               selectedPost.source,
             );
-            if (success) replaceToDetail(selectedPost.id);
+            if (success) {
+              replaceToDetail(selectedPost.id);
+            } else {
+              showToast("更新できませんでした。");
+            }
           } else {
             const nextValue = pendingTag
               ? { ...composerValue, tagsText: appendPendingTag(composerValue.tagsText, pendingTag) }
@@ -2280,6 +2294,8 @@ export default function Home() {
             if (success) {
               setComposerValue(emptyForm);
               replaceToHome();
+            } else {
+              showToast("保存できませんでした。");
             }
           }
         }}
