@@ -4,6 +4,8 @@
 
 > 運用メモ: PC Web版 / PWA / Vercel運用は今後使う可能性が低いため凍結扱い。以後はAndroidネイティブ / Capacitorアプリを優先し、Web版固有の対処や同期は明示依頼がない限り行わない。
 
+> 重要な実装メモ: Android / Capacitor 版では、HOME配下の画面遷移やモーダル終了に `window.history.back()` を使わない。起動直後のCapacitor WebViewではNext.jsの内部履歴状態と衝突し、`https://localhost/` が再読み込みされて画面が点滅することがある。アプリ内の戻りは `replaceState` とReact state更新で「戻り先状態へ直接置き換える」方針に統一する。新しい配下画面を追加する場合も、戻るUIとAndroid戻るボタンは共通のHOME復帰処理を使う。
+
 ## Phase 1: Webアプリ版の完成・極限のブラッシュアップ（実用版完了）
 **目的：開発スピードの最速化とUI/UXの完成度向上**
 

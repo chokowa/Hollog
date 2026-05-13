@@ -647,12 +647,15 @@ export default function Home() {
   const closeImageViewer = useCallback(() => {
     const currentState = window.history.state as AppHistoryState | null;
     if (currentState?.bocchiSns && currentState.imageViewer) {
-      window.history.back();
+      moveToHistoryState({
+        ...currentState,
+        imageViewer: null,
+      });
       return;
     }
     setImageViewerRoute(null);
     setImageViewerOriginRect(null);
-  }, []);
+  }, [moveToHistoryState]);
 
   const openPostDetail = useCallback((postId: string) => {
     pushHistoryState({ bocchiSns: true, view: "detail", postId });
@@ -802,12 +805,25 @@ export default function Home() {
 
   const goBackOrHome = useCallback(() => {
     const currentState = window.history.state as AppHistoryState | null;
-    if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.composer || currentState.imageViewer)) {
-      window.history.back();
+    if (currentState?.bocchiSns) {
+      if (currentState.imageViewer) {
+        moveToHistoryState({
+          ...currentState,
+          imageViewer: null,
+        });
+        return;
+      }
+      if (currentState.view !== "home" || currentState.composer) {
+        resetToHome(null);
+        return;
+      }
+    }
+    if (activeViewRef.current !== "home") {
+      resetToHome(null);
       return;
     }
     resetToHome(null);
-  }, [resetToHome]);
+  }, [moveToHistoryState, resetToHome]);
 
   useEffect(() => {
     activeViewRef.current = activeView;
@@ -959,14 +975,17 @@ export default function Home() {
         return;
       }
 
-      if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.imageViewer)) {
-        if (currentState.view === "calendar" && !currentState.imageViewer) {
-          resetToHome(null);
-          scrollViewportToTop("auto");
-          return;
-        }
+      if (currentState?.bocchiSns && currentState.imageViewer) {
+        moveToHistoryState({
+          ...currentState,
+          imageViewer: null,
+        });
+        return;
+      }
 
-        window.history.back();
+      if (currentState?.bocchiSns && currentState.view !== "home") {
+        resetToHome(null);
+        scrollViewportToTop("auto");
         return;
       }
 
@@ -1048,25 +1067,39 @@ export default function Home() {
   }, [emptyForm, pushHistoryState]);
 
   const openEditComposer = useCallback((post: Post) => {
-    setComposerValue(fromPost(post));
-    setIsEditorOpen(true);
-    pushHistoryState({
+    const view = activeViewRef.current === "detail" ? "detail" : activeViewRef.current;
+    const nextState: AppHistoryState = {
       bocchiSns: true,
-      view: activeViewRef.current === "detail" ? "detail" : activeViewRef.current,
+      view,
       postId: post.id,
       composer: "edit",
-    });
-  }, [fromPost, pushHistoryState]);
+    };
+
+    setComposerValue(fromPost(post));
+    setIsEditorOpen(true);
+    if (view === "detail") {
+      moveToHistoryState(nextState);
+      return;
+    }
+    pushHistoryState(nextState);
+  }, [fromPost, moveToHistoryState, pushHistoryState]);
 
   const closeComposer = useCallback(() => {
     const currentState = window.history.state as AppHistoryState | null;
     if (currentState?.bocchiSns && currentState.composer) {
-      window.history.back();
+      const nextState: AppHistoryState = {
+        bocchiSns: true,
+        view: currentState.view,
+        postId: currentState.postId ?? null,
+        activeTag: currentState.view === "home" ? (currentState.activeTag ?? activeTagRef.current) : null,
+        imageViewer: currentState.imageViewer ?? null,
+      };
+      moveToHistoryState(nextState);
       return;
     }
     setIsComposerOpen(false);
     setIsEditorOpen(false);
-  }, []);
+  }, [moveToHistoryState]);
 
   const replaceToHome = useCallback(() => {
     resetToHome(null);
