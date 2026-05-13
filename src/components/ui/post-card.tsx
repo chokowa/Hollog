@@ -357,6 +357,31 @@ function PostCardComponent({
     onOgpRetry?.(post);
   };
 
+  const openActionMenuFromButton = (button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 176;
+    const menuHeight = 280;
+    const gap = 8;
+    const left = Math.max(gap, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - gap));
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const canScrollDown = window.scrollY + window.innerHeight < document.documentElement.scrollHeight - 1;
+    if (spaceBelow < menuHeight && canScrollDown) {
+      const missingSpace = menuHeight - spaceBelow;
+      const maxScrollDown = document.documentElement.scrollHeight - window.innerHeight - window.scrollY;
+      window.scrollBy({ top: Math.min(missingSpace + gap, maxScrollDown), behavior: "smooth" });
+      window.setTimeout(() => openActionMenuFromButton(button), 180);
+      return;
+    }
+
+    const opensDown = spaceBelow >= menuHeight || rect.top < window.innerHeight / 2;
+    const top = opensDown
+      ? Math.min(rect.bottom + gap, window.innerHeight - menuHeight - gap)
+      : Math.max(gap, rect.top - menuHeight - gap);
+
+    setActionMenuPosition({ left, top });
+    setIsActionMenuOpen(true);
+  };
+
   const toggleActionMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (isActionMenuOpen) {
@@ -364,18 +389,7 @@ function PostCardComponent({
       return;
     }
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const menuWidth = 176;
-    const menuHeight = 280;
-    const gap = 8;
-    const left = Math.max(gap, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - gap));
-    const opensDown = rect.top < window.innerHeight / 2;
-    const top = opensDown
-      ? Math.min(rect.bottom + gap, window.innerHeight - menuHeight - gap)
-      : Math.max(gap, rect.top - menuHeight - gap);
-
-    setActionMenuPosition({ left, top });
-    setIsActionMenuOpen(true);
+    openActionMenuFromButton(e.currentTarget);
   };
 
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>, index: number) => {

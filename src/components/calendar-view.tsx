@@ -144,6 +144,7 @@ export function CalendarView({
 }: CalendarViewProps) {
   const didSyncInitialPostDateRef = useRef(false);
   const tagFilterRef = useRef<HTMLDivElement>(null);
+  const suppressNextOutsideClickRef = useRef(false);
   const [selectedDateKey, setSelectedDateKey] = useState(() => persistedSelectedDateKey ?? getLatestPostDateKey(posts));
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const persistedMonth = persistedVisibleMonthKey ? monthKeyToDate(persistedVisibleMonthKey) : null;
@@ -180,16 +181,57 @@ export function CalendarView({
   }, [onCalendarStateChange, selectedDateKey, visibleMonth]);
 
   useEffect(() => {
-    if (!isTagFilterOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (tagFilterRef.current && !tagFilterRef.current.contains(event.target as Node)) {
-        setIsTagFilterOpen(false);
-      }
+    const suppressOutsideClick = (event: MouseEvent) => {
+      if (!suppressNextOutsideClickRef.current) return;
+      suppressNextOutsideClickRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
     };
 
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
+    window.addEventListener("click", suppressOutsideClick, true);
+    return () => window.removeEventListener("click", suppressOutsideClick, true);
+  }, []);
+
+  useEffect(() => {
+    if (!isTagFilterOpen) return;
+
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (target instanceof Element && target.closest("[data-calendar-tag-filter-backdrop]")) {
+        suppressNextOutsideClickRef.current = true;
+        setIsTagFilterOpen(false);
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (tagFilterRef.current?.contains(target)) return;
+      suppressNextOutsideClickRef.current = true;
+      setIsTagFilterOpen(false);
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    window.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    return () => window.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+  }, [isTagFilterOpen]);
+
+  useEffect(() => {
+    document.documentElement.dataset.calendarTagFilter = isTagFilterOpen ? "open" : "closed";
+
+    const handleCloseRequest = () => {
+      suppressNextOutsideClickRef.current = false;
+      setIsTagFilterOpen(false);
+    };
+
+    window.addEventListener("bocchi:calendar-close-tag-filter", handleCloseRequest);
+    return () => {
+      window.removeEventListener("bocchi:calendar-close-tag-filter", handleCloseRequest);
+      document.documentElement.dataset.calendarTagFilter = "closed";
+    };
   }, [isTagFilterOpen]);
 
   const setActiveFilter = useCallback((activeFilter: CalendarFilter) => {
@@ -289,10 +331,17 @@ export function CalendarView({
         </div>
         <div className="flex items-center gap-2">
           <div className="relative shrink-0" ref={tagFilterRef}>
+            {isTagFilterOpen && (
+              <div
+                className="fixed inset-0 z-[35] cursor-default bg-transparent"
+                data-calendar-tag-filter-backdrop
+                aria-hidden="true"
+              />
+            )}
             <button
               type="button"
               onClick={() => setIsTagFilterOpen((current) => !current)}
-              className={`flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border px-2 font-medium transition ${
+              className={`relative z-40 flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border px-2 font-medium transition ${
                 resolvedActiveTags.length > 0
                   ? "border-primary/30 bg-primary/10 text-primary"
                   : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -309,7 +358,7 @@ export function CalendarView({
             </button>
 
             {isTagFilterOpen && (
-              <div className="absolute right-0 top-full z-30 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-3xl border border-border bg-background/95 p-3 shadow-xl backdrop-blur">
+              <div className="absolute right-0 top-full z-40 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-3xl border border-border bg-background/95 p-3 shadow-xl backdrop-blur">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-foreground">タグで絞り込み</p>

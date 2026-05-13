@@ -6,7 +6,7 @@ import type { PostsRepository } from "@/lib/postsRepository";
 import type { Post } from "@/types/post";
 
 const DB_NAME = "bocchisns-local-db";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const POSTS_STORE_NAME = "posts";
 const META_STORE_NAME = "meta";
 const SEEDED_KEY = "sample-seeded";
@@ -117,16 +117,16 @@ function normalizePost(rawPost: LegacyPost): Post {
 async function ensureSeedData() {
   const database = await getDatabase();
   const hasSeeded = await database.get(META_STORE_NAME, SEEDED_KEY);
-  if (hasSeeded) {
+  if (!hasSeeded) {
+    const transaction = database.transaction([POSTS_STORE_NAME, META_STORE_NAME], "readwrite");
+    const postsStore = transaction.objectStore(POSTS_STORE_NAME);
+    const metaStore = transaction.objectStore(META_STORE_NAME);
+    await Promise.all(samplePosts.map((post) => postsStore.put(post)));
+    await metaStore.put(true, SEEDED_KEY);
+    await transaction.done;
     return database;
   }
 
-  const transaction = database.transaction([POSTS_STORE_NAME, META_STORE_NAME], "readwrite");
-  const postsStore = transaction.objectStore(POSTS_STORE_NAME);
-  const metaStore = transaction.objectStore(META_STORE_NAME);
-  await Promise.all(samplePosts.map((post) => postsStore.put(post)));
-  await metaStore.put(true, SEEDED_KEY);
-  await transaction.done;
   return database;
 }
 

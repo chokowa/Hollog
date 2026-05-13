@@ -11,6 +11,7 @@ type BottomNavProps = {
   onQuickImagePost?: () => void;
   onQuickCameraPost?: () => void;
   onQuickClipboardPost?: () => void;
+  showPostFab?: boolean;
 };
 
 const LONG_PRESS_MS = 420;
@@ -23,6 +24,7 @@ export function BottomNav({
   onQuickImagePost,
   onQuickCameraPost,
   onQuickClipboardPost,
+  showPostFab = true,
 }: BottomNavProps) {
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
   const longPressTimerRef = useRef<number | null>(null);
@@ -172,32 +174,34 @@ export function BottomNav({
         </div>
       </nav>
 
-      <button
-        ref={fabRef}
-        onPointerDown={(event) => {
-          if (!hasQuickActions || (event.pointerType === "mouse" && event.button !== 0)) return;
-          clearLongPressTimer();
-          didLongPressRef.current = false;
-          longPressTimerRef.current = window.setTimeout(openQuickMenu, LONG_PRESS_MS);
-        }}
-        onPointerUp={clearLongPressTimer}
-        onPointerCancel={clearLongPressTimer}
-        onPointerLeave={clearLongPressTimer}
-        onClick={(event) => {
-          clearLongPressTimer();
-          if (didLongPressRef.current) {
-            event.preventDefault();
+      {showPostFab && (
+        <button
+          ref={fabRef}
+          onPointerDown={(event) => {
+            if (!hasQuickActions || (event.pointerType === "mouse" && event.button !== 0)) return;
+            clearLongPressTimer();
             didLongPressRef.current = false;
-            return;
-          }
-          setIsQuickMenuOpen(false);
-          onPostClick();
-        }}
-        className="timeline-post-fab fixed bottom-20 right-[max(1rem,calc((100vw-28rem)/2+1rem))] z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-black/20 will-change-transform transition duration-[260ms] ease-out hover:bg-primary/90 active:scale-95"
-        aria-label="新規ポスト"
-      >
-        <Plus size={28} />
-      </button>
+            longPressTimerRef.current = window.setTimeout(openQuickMenu, LONG_PRESS_MS);
+          }}
+          onPointerUp={clearLongPressTimer}
+          onPointerCancel={clearLongPressTimer}
+          onPointerLeave={clearLongPressTimer}
+          onClick={(event) => {
+            clearLongPressTimer();
+            if (didLongPressRef.current) {
+              event.preventDefault();
+              didLongPressRef.current = false;
+              return;
+            }
+            setIsQuickMenuOpen(false);
+            onPostClick();
+          }}
+          className="timeline-post-fab fixed bottom-20 right-[max(1rem,calc((100vw-28rem)/2+1rem))] z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-black/20 will-change-transform transition duration-[260ms] ease-out hover:bg-primary/90 active:scale-95"
+          aria-label="新規ポスト"
+        >
+          <Plus size={28} />
+        </button>
+      )}
     </>
   );
 }
