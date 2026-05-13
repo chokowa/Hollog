@@ -21,6 +21,7 @@ type BocchiMediaPlugin = {
   pickImages(options: { limit: number }): Promise<{ items: NativePickedMedia[] }>;
   readClipboardImages(options: { limit: number }): Promise<{ items: NativePickedMedia[] }>;
   readClipboardText(): Promise<{ text: string }>;
+  copyImageToClipboard(options: NativeSaveMediaItem): Promise<{ copied: boolean }>;
   saveImages(options: { items: NativeSaveMediaItem[] }): Promise<{ savedCount: number }>;
   saveJsonFile(options: { fileName: string; content: string }): Promise<{ cancelled?: boolean; uri?: string }>;
   openJsonFile(): Promise<{ cancelled?: boolean; uri?: string; name?: string; content?: string }>;
@@ -38,6 +39,10 @@ export function readNativeClipboardImages(limit: number) {
 
 export function readNativeClipboardText() {
   return BocchiMedia.readClipboardText();
+}
+
+export function copyNativeImageToClipboard(item: NativeSaveMediaItem) {
+  return BocchiMedia.copyImageToClipboard(item);
 }
 
 export function saveNativeImages(items: NativeSaveMediaItem[]) {

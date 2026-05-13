@@ -30,6 +30,7 @@ import {
   type ParsedHollogBackup,
 } from "@/lib/hollog-backup";
 import {
+  copyNativeImageToClipboard,
   openNativeJsonFile,
   pickNativeImages,
   readNativeClipboardImages,
@@ -227,6 +228,36 @@ function blobToDataUrl(blob: Blob) {
     reader.onerror = () => reject(reader.error ?? new Error("画像を読み込めませんでした。"));
     reader.readAsDataURL(blob);
   });
+}
+
+function getOrderedPostImageItem(post: Post, index: number) {
+  const imageBlobs = post.imageBlobs && post.imageBlobs.length > 0
+    ? post.imageBlobs
+    : post.imageBlob
+      ? [post.imageBlob]
+      : [];
+  const imageBlobIds = normalizeImageBlobIds(imageBlobs, post.imageBlobIds) ?? imageBlobs.map(createImageBlobId);
+  const mediaRefs = post.mediaRefs ?? [];
+  const orderedItems = normalizeMediaOrder({
+    imageBlobs,
+    imageBlobIds,
+    mediaRefs,
+    mediaOrder: post.mediaOrder,
+  }) ?? [
+    ...imageBlobIds.map((id) => ({ source: "imageBlob" as const, id })),
+    ...mediaRefs.map((mediaRef) => ({ source: "mediaRef" as const, id: mediaRef.id })),
+  ];
+  const target = orderedItems[index];
+  if (!target) return null;
+
+  if (target.source === "imageBlob") {
+    const blobIndex = imageBlobIds.indexOf(target.id);
+    const blob = blobIndex >= 0 ? imageBlobs[blobIndex] : null;
+    return blob ? { kind: "blob" as const, blob, index: blobIndex } : null;
+  }
+
+  const mediaRef = mediaRefs.find((item) => item.id === target.id && item.kind === "image");
+  return mediaRef ? { kind: "mediaRef" as const, mediaRef } : null;
 }
 
 async function saveJsonTextFile(fileName: string, content: string) {
@@ -901,6 +932,11 @@ export default function Home() {
     let removeListener: (() => void) | null = null;
 
     void CapacitorApp.addListener("backButton", () => {
+      if (activeViewRef.current === "calendar" && document.documentElement.dataset.calendarTagFilter === "open") {
+        window.dispatchEvent(new Event("bocchi:calendar-close-tag-filter"));
+        return;
+      }
+
       const currentState = window.history.state as AppHistoryState | null;
       if (currentState?.bocchiSns && currentState.composer) {
         window.dispatchEvent(new Event("bocchi:composer-close-request"));
@@ -908,6 +944,12 @@ export default function Home() {
       }
 
       if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.imageViewer)) {
+        if (currentState.view === "calendar" && !currentState.imageViewer) {
+          resetToHome(null);
+          scrollViewportToTop("auto");
+          return;
+        }
+
         window.history.back();
         return;
       }
@@ -930,7 +972,7 @@ export default function Home() {
       isMounted = false;
       removeListener?.();
     };
-  }, [moveToHistoryState]);
+  }, [moveToHistoryState, resetToHome, scrollViewportToTop]);
 
   useEffect(() => {
     const handleNativeShare = (event: Event) => {
@@ -1729,6 +1771,41 @@ export default function Home() {
     }
   }, [showToast]);
 
+  const handleCopyPostImage = useCallback(async (post: Post, index: number) => {
+    const target = getOrderedPostImageItem(post, index);
+    if (!target) {
+      showToast("コピーできる画像が見つかりませんでした。");
+      return;
+    }
+
+    if (!Capacitor.isNativePlatform()) {
+      showToast("画像コピーはAndroidアプリで利用できます。");
+      return;
+    }
+
+    try {
+      let item: NativeSaveMediaItem;
+      if (target.kind === "blob") {
+        item = {
+          dataUrl: await blobToDataUrl(target.blob),
+          mimeType: target.blob.type || "image/jpeg",
+          name: `bocchi-image-${post.id}-${target.index + 1}${getImageExtensionFromType(target.blob.type)}`,
+        };
+      } else {
+        item = {
+          uri: target.mediaRef.uri,
+          mimeType: target.mediaRef.mimeType || "image/jpeg",
+          name: target.mediaRef.name || `bocchi-image-${post.id}-${index + 1}${getImageExtensionFromType(target.mediaRef.mimeType)}`,
+        };
+      }
+
+      const result = await copyNativeImageToClipboard(item);
+      showToast(result.copied ? "画像をクリップボードにコピーしました。" : "画像をコピーできませんでした。");
+    } catch {
+      showToast("画像をコピーできませんでした。");
+    }
+  }, [showToast]);
+
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
     const success = await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
     showToast(success ? `${postTypeLabels[nextType]}に移動しました。` : "移動できませんでした。");
@@ -1795,6 +1872,11 @@ export default function Home() {
       images={postViewerImages}
       initialIndex={postViewerIndex}
       originRect={imageViewerOriginRect}
+      onCopyCurrentImage={(index) => {
+        const post = posts.find((item) => item.id === imageViewerRoute.postId);
+        if (!post) return;
+        return handleCopyPostImage(post, index);
+      }}
       onClose={closeImageViewer}
     />
   ) : null;
@@ -2029,6 +2111,7 @@ export default function Home() {
             onPostUrlCopy={(_, copied) => {
               showToast(copied ? "URLをコピーしました。" : "コピーできませんでした。");
             }}
+            onPostImageCopy={handleCopyPostImage}
             onPostSaveMedia={handleSavePostMedia}
             onPostTypeChange={handlePostTypeChange}
             onPostOgpFetched={handlePostOgpFetchResult}
@@ -2105,6 +2188,7 @@ export default function Home() {
         onQuickImagePost={handleQuickImagePost}
         onQuickCameraPost={handleQuickCameraPost}
         onQuickClipboardPost={handleQuickClipboardPost}
+        showPostFab={activeView !== "calendar"}
       />
 
       <input

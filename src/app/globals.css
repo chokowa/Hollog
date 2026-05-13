@@ -294,6 +294,13 @@ html[data-timeline-chrome="hidden"] .timeline-post-fab {
   display: none;
 }
 
+.image-viewer-copy-menu,
+.image-viewer-copy-menu * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .image-viewer-nav-button {
     display: flex;

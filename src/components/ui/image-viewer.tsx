@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import type { ImageOriginRect } from "@/types/navigation";
 
 type ImageViewerProps = {
@@ -10,39 +10,144 @@ type ImageViewerProps = {
   initialIndex?: number;
   originRect?: ImageOriginRect | null;
   getOriginRect?: (index: number) => ImageOriginRect | null;
+  onCopyCurrentImage?: (index: number) => void | Promise<void>;
   onClose: () => void;
 };
 
-export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRect, onClose }: ImageViewerProps) {
+type TouchPoint = {
+  clientX: number;
+  clientY: number;
+};
+
+const MIN_ZOOM_SCALE = 1;
+const MAX_ZOOM_SCALE = 4;
+const ZOOM_GESTURE_EPSILON = 0.01;
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getTouchDistance(first: TouchPoint, second: TouchPoint) {
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+}
+
+function getTouchCenter(first: TouchPoint, second: TouchPoint) {
+  return {
+    x: (first.clientX + second.clientX) / 2,
+    y: (first.clientY + second.clientY) / 2,
+  };
+}
+
+export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRect, onCopyCurrentImage, onClose }: ImageViewerProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
-  const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
   const [dragOffsetX, setDragOffsetX] = useState(0);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [isHorizontalDragging, setIsHorizontalDragging] = useState(false);
   const [isClosingToOrigin, setIsClosingToOrigin] = useState(false);
   const [closingRect, setClosingRect] = useState<ImageOriginRect | null>(null);
+  const [imageMenuPosition, setImageMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const [zoomScale, setZoomScale] = useState(MIN_ZOOM_SCALE);
+  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 });
   const imageRefs = useRef(new Map<number, HTMLImageElement>());
+  const viewerRef = useRef<HTMLDivElement | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const pendingDragOffsetRef = useRef(0);
   const slideFrameRef = useRef<number | null>(null);
   const pendingDragOffsetXRef = useRef(0);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchEndRef = useRef<{ x: number; y: number } | null>(null);
+  const zoomScaleRef = useRef(MIN_ZOOM_SCALE);
+  const imageOffsetRef = useRef({ x: 0, y: 0 });
+  const panStateRef = useRef<{
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+  const pinchStateRef = useRef<{
+    distance: number;
+    scale: number;
+    centerX: number;
+    centerY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+  const imageLongPressTimerRef = useRef<number | null>(null);
+  const imageLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const imageLongPressTriggeredRef = useRef(false);
   const portalRoot = typeof document === "undefined" ? null : document.body;
 
   // 最小スワイプ距離(px)
   const minSwipeDistance = 50;
 
+  const applyZoomState = useCallback((nextScale: number, nextOffset: { x: number; y: number }) => {
+    zoomScaleRef.current = nextScale;
+    imageOffsetRef.current = nextOffset;
+    setZoomScale(nextScale);
+    setImageOffset(nextOffset);
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    panStateRef.current = null;
+    pinchStateRef.current = null;
+    applyZoomState(MIN_ZOOM_SCALE, { x: 0, y: 0 });
+  }, [applyZoomState]);
+
+  const clampImageOffset = useCallback((nextOffsetX: number, nextOffsetY: number, scale: number) => {
+    if (scale <= MIN_ZOOM_SCALE + ZOOM_GESTURE_EPSILON) {
+      return { x: 0, y: 0 };
+    }
+
+    const imageNode = imageRefs.current.get(currentIndex);
+    const viewerNode = viewerRef.current;
+    if (!imageNode || !viewerNode) {
+      return { x: nextOffsetX, y: nextOffsetY };
+    }
+
+    const maxOffsetX = Math.max(0, ((imageNode.clientWidth * scale) - viewerNode.clientWidth) / 2);
+    const maxOffsetY = Math.max(0, ((imageNode.clientHeight * scale) - viewerNode.clientHeight) / 2);
+
+    return {
+      x: clampValue(nextOffsetX, -maxOffsetX, maxOffsetX),
+      y: clampValue(nextOffsetY, -maxOffsetY, maxOffsetY),
+    };
+  }, [currentIndex]);
+
   const handleNext = useCallback(() => {
+    resetZoom();
     setCurrentIndex((prev) => (prev === images.length - 1 ? 0 : prev + 1));
-  }, [images.length]);
+  }, [images.length, resetZoom]);
 
   const handlePrev = useCallback(() => {
+    resetZoom();
     setCurrentIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1));
-  }, [images.length]);
+  }, [images.length, resetZoom]);
 
   const requestClose = useCallback(() => {
+    setImageMenuPosition(null);
     onClose();
   }, [onClose]);
+
+  const clearImageLongPress = useCallback(() => {
+    if (imageLongPressTimerRef.current !== null) {
+      window.clearTimeout(imageLongPressTimerRef.current);
+      imageLongPressTimerRef.current = null;
+    }
+    imageLongPressStartRef.current = null;
+  }, []);
+
+  const openImageMenu = useCallback((left: number, top: number) => {
+    const menuWidth = 184;
+    const menuHeight = 52;
+    const gap = 8;
+    const fingerOffset = 56;
+    const preferredLeft = left - (menuWidth / 2);
+    const preferredTop = top - fingerOffset - menuHeight;
+    setImageMenuPosition({
+      left: Math.max(gap, Math.min(preferredLeft, window.innerWidth - menuWidth - gap)),
+      top: Math.max(gap, Math.min(preferredTop, window.innerHeight - menuHeight - gap)),
+    });
+  }, []);
 
   const scheduleDragOffset = useCallback((nextOffset: number) => {
     pendingDragOffsetRef.current = nextOffset;
@@ -127,28 +232,99 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
 
   const onTouchStart = (e: React.TouchEvent) => {
     e.stopPropagation();
-    setTouchEnd(null);
+    if (e.touches.length === 2) {
+      const center = getTouchCenter(e.touches[0], e.touches[1]);
+      pinchStateRef.current = {
+        distance: getTouchDistance(e.touches[0], e.touches[1]),
+        scale: zoomScaleRef.current,
+        centerX: center.x,
+        centerY: center.y,
+        offsetX: imageOffsetRef.current.x,
+        offsetY: imageOffsetRef.current.y,
+      };
+      panStateRef.current = null;
+      touchStartRef.current = null;
+      touchEndRef.current = null;
+      setIsHorizontalDragging(false);
+      scheduleDragOffsetX(0);
+      scheduleDragOffset(0);
+      return;
+    }
+
+    if (e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+    if (zoomScaleRef.current > MIN_ZOOM_SCALE + ZOOM_GESTURE_EPSILON) {
+      panStateRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        offsetX: imageOffsetRef.current.x,
+        offsetY: imageOffsetRef.current.y,
+      };
+      touchStartRef.current = null;
+      touchEndRef.current = null;
+      return;
+    }
+
+    touchEndRef.current = null;
     setIsHorizontalDragging(false);
     scheduleDragOffsetX(0);
     scheduleDragOffset(0);
-    setTouchStart({
-      x: e.targetTouches[0].clientX,
-      y: e.targetTouches[0].clientY,
-    });
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
     e.stopPropagation();
+    if (e.touches.length === 2) {
+      const pinchState = pinchStateRef.current;
+      if (!pinchState) return;
+
+      const distance = getTouchDistance(e.touches[0], e.touches[1]);
+      const center = getTouchCenter(e.touches[0], e.touches[1]);
+      const nextScale = clampValue(
+        pinchState.scale * (distance / Math.max(pinchState.distance, 1)),
+        MIN_ZOOM_SCALE,
+        MAX_ZOOM_SCALE,
+      );
+      const nextOffset = clampImageOffset(
+        pinchState.offsetX + (center.x - pinchState.centerX),
+        pinchState.offsetY + (center.y - pinchState.centerY),
+        nextScale,
+      );
+      applyZoomState(nextScale, nextOffset);
+      return;
+    }
+
+    if (e.touches.length !== 1) return;
+
+    if (zoomScaleRef.current > MIN_ZOOM_SCALE + ZOOM_GESTURE_EPSILON) {
+      const panState = panStateRef.current;
+      if (!panState) return;
+
+      const touch = e.touches[0];
+      const nextOffset = clampImageOffset(
+        panState.offsetX + (touch.clientX - panState.startX),
+        panState.offsetY + (touch.clientY - panState.startY),
+        zoomScaleRef.current,
+      );
+      applyZoomState(zoomScaleRef.current, nextOffset);
+      return;
+    }
+
+    const touchStart = touchStartRef.current;
     if (!touchStart) return;
 
     const nextTouch = {
-      x: e.targetTouches[0].clientX,
-      y: e.targetTouches[0].clientY,
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
     };
     const deltaX = nextTouch.x - touchStart.x;
     const deltaY = nextTouch.y - touchStart.y;
 
-    setTouchEnd(nextTouch);
+    touchEndRef.current = nextTouch;
     if (Math.abs(deltaX) > Math.abs(deltaY) && images.length > 1) {
       setIsHorizontalDragging(true);
       scheduleDragOffset(0);
@@ -165,8 +341,47 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
 
   const onTouchEnd = (e: React.TouchEvent) => {
     e.stopPropagation();
+    if (pinchStateRef.current) {
+      pinchStateRef.current = null;
+      if (e.touches.length === 1 && zoomScaleRef.current > MIN_ZOOM_SCALE + ZOOM_GESTURE_EPSILON) {
+        const touch = e.touches[0];
+        panStateRef.current = {
+          startX: touch.clientX,
+          startY: touch.clientY,
+          offsetX: imageOffsetRef.current.x,
+          offsetY: imageOffsetRef.current.y,
+        };
+        return;
+      }
+      if (zoomScaleRef.current <= MIN_ZOOM_SCALE + ZOOM_GESTURE_EPSILON) {
+        resetZoom();
+      }
+      return;
+    }
+
+    if (zoomScaleRef.current > MIN_ZOOM_SCALE + ZOOM_GESTURE_EPSILON) {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        panStateRef.current = {
+          startX: touch.clientX,
+          startY: touch.clientY,
+          offsetX: imageOffsetRef.current.x,
+          offsetY: imageOffsetRef.current.y,
+        };
+      } else {
+        panStateRef.current = null;
+      }
+      return;
+    }
+
+    const touchStart = touchStartRef.current;
+    const touchEnd = touchEndRef.current;
+    touchStartRef.current = null;
+    touchEndRef.current = null;
+
     if (!touchStart || !touchEnd) {
       scheduleDragOffset(0);
+      scheduleDragOffsetX(0);
       return;
     }
 
@@ -192,6 +407,62 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
     }
     scheduleDragOffsetX(0);
     scheduleDragOffset(0);
+  };
+
+  const onTouchCancel = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    clearImageLongPress();
+    pinchStateRef.current = null;
+    panStateRef.current = null;
+    touchStartRef.current = null;
+    touchEndRef.current = null;
+    setIsHorizontalDragging(false);
+    scheduleDragOffsetX(0);
+    scheduleDragOffset(0);
+  };
+
+  const onImagePointerDown = (e: React.PointerEvent<HTMLImageElement>) => {
+    if (!onCopyCurrentImage) return;
+    if (e.pointerType === "mouse" && e.button !== 2) return;
+    if (e.pointerType !== "mouse" && !e.isPrimary) return;
+
+    imageLongPressTriggeredRef.current = false;
+    clearImageLongPress();
+    imageLongPressStartRef.current = { x: e.clientX, y: e.clientY };
+
+    if (e.pointerType === "mouse" && e.button === 2) {
+      openImageMenu(e.clientX, e.clientY);
+      imageLongPressTriggeredRef.current = true;
+      return;
+    }
+
+    imageLongPressTimerRef.current = window.setTimeout(() => {
+      imageLongPressTriggeredRef.current = true;
+      openImageMenu(e.clientX, e.clientY);
+      imageLongPressTimerRef.current = null;
+      imageLongPressStartRef.current = null;
+    }, 420);
+  };
+
+  const onImagePointerMove = (e: React.PointerEvent<HTMLImageElement>) => {
+    const start = imageLongPressStartRef.current;
+    if (!start) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) {
+      clearImageLongPress();
+    }
+  };
+
+  const onImagePointerUp = () => {
+    clearImageLongPress();
+  };
+
+  const onImageContextMenu = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!onCopyCurrentImage) return;
+    e.preventDefault();
+    e.stopPropagation();
+    imageLongPressTriggeredRef.current = true;
+    clearImageLongPress();
+    openImageMenu(e.clientX, e.clientY);
   };
 
   useEffect(() => {
@@ -220,7 +491,19 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
   }, [handleNext, handlePrev, portalRoot, requestClose]);
 
   useEffect(() => {
+    if (!imageMenuPosition) return;
+    const closeMenu = () => setImageMenuPosition(null);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
     return () => {
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [imageMenuPosition]);
+
+  useEffect(() => {
+    return () => {
+      clearImageLongPress();
       if (dragFrameRef.current !== null) {
         window.cancelAnimationFrame(dragFrameRef.current);
       }
@@ -228,7 +511,7 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
         window.cancelAnimationFrame(slideFrameRef.current);
       }
     };
-  }, []);
+  }, [clearImageLongPress]);
 
   if (!images || images.length === 0 || !portalRoot) return null;
 
@@ -244,6 +527,11 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
       onPointerMove={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
       onPointerCancel={(e) => e.stopPropagation()}
+      onClick={() => {
+        if (imageMenuPosition) {
+          setImageMenuPosition(null);
+        }
+      }}
     >
       {/* ヘッダー */}
       <div
@@ -264,12 +552,20 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
 
       {/* メインビュー */}
       <div
+        ref={viewerRef}
         className="relative flex flex-1 items-center justify-center overflow-hidden"
         style={{ touchAction: "none" }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onClick={requestClose}
+        onTouchCancel={onTouchCancel}
+        onClick={() => {
+          if (imageLongPressTriggeredRef.current) {
+            imageLongPressTriggeredRef.current = false;
+            return;
+          }
+          requestClose();
+        }}
       >
         <div
           className="flex items-center justify-center ease-out will-change-transform"
@@ -309,6 +605,11 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
               src={images[currentIndex]}
               alt={`View ${currentIndex + 1}`}
               className="h-full w-full select-none object-cover"
+              onPointerDown={onImagePointerDown}
+              onPointerMove={onImagePointerMove}
+              onPointerUp={onImagePointerUp}
+              onPointerCancel={onImagePointerUp}
+              onContextMenu={onImageContextMenu}
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
@@ -336,6 +637,16 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
                     src={image}
                     alt={`View ${index + 1}`}
                     className="max-h-full max-w-full select-none object-contain"
+                    style={index === currentIndex ? {
+                      transform: `translate3d(${imageOffset.x}px, ${imageOffset.y}px, 0) scale(${zoomScale})`,
+                      transformOrigin: "center center",
+                    } : undefined}
+                    draggable={false}
+                    onPointerDown={index === currentIndex ? onImagePointerDown : undefined}
+                    onPointerMove={index === currentIndex ? onImagePointerMove : undefined}
+                    onPointerUp={index === currentIndex ? onImagePointerUp : undefined}
+                    onPointerCancel={index === currentIndex ? onImagePointerUp : undefined}
+                    onContextMenu={index === currentIndex ? onImageContextMenu : undefined}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -370,6 +681,51 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
           </>
         )}
       </div>
+      {imageMenuPosition && onCopyCurrentImage && (
+        <>
+          <button
+            type="button"
+            aria-label="コピー menu を閉じる"
+            className="fixed inset-0 z-[109] cursor-default bg-transparent"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setImageMenuPosition(null);
+            }}
+          />
+          <div
+            style={{ left: imageMenuPosition.left, top: imageMenuPosition.top }}
+            className="image-viewer-copy-menu fixed z-[110] w-[184px] overflow-hidden rounded-2xl border border-border bg-card p-1 text-sm shadow-2xl select-none"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onPointerUp={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setImageMenuPosition(null);
+                void onCopyCurrentImage(currentIndex);
+              }}
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-card-foreground transition hover:bg-muted select-none"
+              style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <Copy size={15} />
+              <span>画像をコピー</span>
+            </button>
+          </div>
+        </>
+      )}
     </div>,
     portalRoot,
   );

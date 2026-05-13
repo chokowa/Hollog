@@ -17,6 +17,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -31,6 +32,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -129,6 +131,35 @@ public class BocchiMediaPlugin extends Plugin {
         JSObject response = new JSObject();
         response.put("text", readClipboardTextValue());
         call.resolve(response);
+    }
+
+    @PluginMethod
+    public void copyImageToClipboard(PluginCall call) {
+        String mimeType = call.getString("mimeType", "image/jpeg");
+        if (mimeType == null || !mimeType.startsWith("image/")) {
+            mimeType = "image/jpeg";
+        }
+
+        try {
+            Uri clipUri = createClipboardImageUri(call, mimeType);
+            if (clipUri == null) {
+                throw new Exception("No image source");
+            }
+
+            ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) {
+                throw new Exception("Clipboard unavailable");
+            }
+
+            ClipData clipData = ClipData.newUri(getContext().getContentResolver(), "Hollog image", clipUri);
+            clipboard.setPrimaryClip(clipData);
+
+            JSObject response = new JSObject();
+            response.put("copied", true);
+            call.resolve(response);
+        } catch (Exception error) {
+            call.reject("画像をコピーできませんでした。", error);
+        }
     }
 
     @PluginMethod
@@ -294,6 +325,50 @@ public class BocchiMediaPlugin extends Plugin {
         }
 
         return imageFile;
+    }
+
+    private Uri createClipboardImageUri(PluginCall call, String mimeType) throws Exception {
+        String dataUrl = call.getString("dataUrl", "");
+        String uriValue = call.getString("uri", "");
+
+        if (dataUrl != null && dataUrl.startsWith("data:")) {
+            int commaIndex = dataUrl.indexOf(',');
+            if (commaIndex < 0) return null;
+
+            File outputFile = createClipboardOutputFile(mimeType);
+            try (FileOutputStream output = new FileOutputStream(outputFile)) {
+                byte[] bytes = Base64.decode(dataUrl.substring(commaIndex + 1), Base64.DEFAULT);
+                output.write(bytes);
+            }
+            return fileToProviderUri(outputFile);
+        }
+
+        if (uriValue == null || uriValue.isEmpty()) {
+            return null;
+        }
+
+        Uri sourceUri = Uri.parse(uriValue);
+        if ("content".equals(sourceUri.getScheme())) {
+            return sourceUri;
+        }
+
+        File outputFile = createClipboardOutputFile(mimeType);
+        try (OutputStream output = new FileOutputStream(outputFile)) {
+            copyUriToOutput(sourceUri, output);
+        }
+        return fileToProviderUri(outputFile);
+    }
+
+    private File createClipboardOutputFile(String mimeType) throws Exception {
+        File clipDir = new File(getContext().getCacheDir(), "clipboard-out");
+        if (!clipDir.exists() && !clipDir.mkdirs()) {
+            throw new Exception("Unable to create clipboard output directory");
+        }
+        return new File(clipDir, "hollog-image-" + System.currentTimeMillis() + getImageExtension(mimeType));
+    }
+
+    private Uri fileToProviderUri(File file) {
+        return FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
     }
 
     private String getDisplayName(Uri uri, int imageNumber, String mimeType) {

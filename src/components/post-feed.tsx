@@ -26,6 +26,7 @@ type PostFeedProps = {
   onPostEdit: (post: Post) => void;
   onPostCopy: (post: Post, copied: boolean) => void;
   onPostUrlCopy: (post: Post, copied: boolean) => void;
+  onPostImageCopy: (post: Post, index: number) => void | Promise<void>;
   onPostSaveMedia: (post: Post) => void;
   onPostTypeChange: (post: Post, nextType: PostType) => void;
   onPostOgpFetched: (post: Post, ogp: Post["ogp"] | null) => void;
@@ -163,7 +164,7 @@ type SwipeablePostCardProps = {
   post: Post;
   children: ReactNode;
   onOpen: () => void;
-  onDelete: (post: Post) => void;
+  onDelete: (post: Post, height: number) => void;
 };
 
 function isInsideFilledHorizontalScrollArea(target: HTMLElement, clientX: number) {
@@ -193,6 +194,7 @@ function getSwipeOffset(deltaX: number) {
 function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCardProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const offsetXRef = useRef(0);
   const suppressNextClickRef = useRef(false);
   const startedOnMediaRef = useRef(false);
@@ -292,7 +294,8 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     if (offsetXRef.current <= -SWIPE_DELETE_THRESHOLD) {
       suppressNextClickRef.current = true;
       updateOffsetX(SWIPE_MAX_OFFSET);
-      window.setTimeout(() => onDelete(post), 140);
+      const height = cardRef.current?.getBoundingClientRect().height ?? 96;
+      window.setTimeout(() => onDelete(post, height), 140);
       return;
     }
 
@@ -359,7 +362,8 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     if (offsetXRef.current <= -SWIPE_DELETE_THRESHOLD) {
       suppressNextClickRef.current = true;
       updateOffsetX(SWIPE_MAX_OFFSET);
-      window.setTimeout(() => onDelete(post), 140);
+      const height = cardRef.current?.getBoundingClientRect().height ?? 96;
+      window.setTimeout(() => onDelete(post, height), 140);
       return;
     }
 
@@ -395,7 +399,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
   };
 
   return (
-    <div className="relative overflow-hidden rounded-xl">
+    <div ref={cardRef} className="relative overflow-hidden rounded-xl">
       <div className="absolute inset-y-0 right-4 flex items-center">
         <div className="flex h-12 w-20 items-center justify-center rounded-full bg-red-500 text-white shadow-sm">
           <Trash2 size={22} />
@@ -436,6 +440,7 @@ export function PostFeed({
   onPostEdit,
   onPostCopy,
   onPostUrlCopy,
+  onPostImageCopy,
   onPostSaveMedia,
   onPostTypeChange,
   onPostOgpFetched,
@@ -459,7 +464,7 @@ export function PostFeed({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [pendingDeletedPosts, setPendingDeletedPosts] = useState<Record<string, Post>>({});
-  const [latestPendingDeleteId, setLatestPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeletedHeights, setPendingDeletedHeights] = useState<Record<string, number>>({});
   const [visibleItemsState, setVisibleItemsState] = useState({
     key: "",
     count: INITIAL_VISIBLE_ITEMS,
@@ -479,13 +484,9 @@ export function PostFeed({
       }));
     });
   }, [postThumbnailUrlMap, posts]);
-  const timelinePosts = useMemo(
-    () => posts.filter((post) => !pendingDeletedPosts[post.id]),
-    [pendingDeletedPosts, posts],
-  );
   const visiblePosts = useMemo(
-    () => timelinePosts.slice(0, visibleItemCount),
-    [timelinePosts, visibleItemCount],
+    () => posts.slice(0, visibleItemCount),
+    [posts, visibleItemCount],
   );
   const groupedVisiblePosts = useMemo(
     () => groupPostsByUpdatedDate(visiblePosts),
@@ -495,10 +496,9 @@ export function PostFeed({
     () => mediaItems.slice(0, visibleItemCount),
     [mediaItems, visibleItemCount],
   );
-  const totalItemCount = activeTab === "media" ? mediaItems.length : timelinePosts.length;
+  const totalItemCount = activeTab === "media" ? mediaItems.length : posts.length;
   const hasMoreItems = visibleItemCount < totalItemCount;
   const deleteTimersRef = useRef(new Map<string, number>());
-  const latestPendingPost = latestPendingDeleteId ? pendingDeletedPosts[latestPendingDeleteId] : null;
   const [tagMenuState, setTagMenuState] = useState<{ tag: string; left: number; top: number; hidden: boolean } | null>(null);
   const tagLongPressTimerRef = useRef<number | null>(null);
   const suppressTagClickRef = useRef<string | null>(null);
@@ -569,40 +569,49 @@ export function PostFeed({
       delete next[postId];
       return next;
     });
-    setLatestPendingDeleteId((current) => (current === postId ? null : current));
+    setPendingDeletedHeights((current) => {
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
   }, [onPostDelete]);
-  const requestDeletePost = useCallback((post: Post) => {
+  const requestDeletePost = useCallback((post: Post, height: number) => {
     if (deleteTimersRef.current.has(post.id)) return;
 
     setPendingDeletedPosts((current) => ({ ...current, [post.id]: post }));
-    setLatestPendingDeleteId(post.id);
+    setPendingDeletedHeights((current) => ({ ...current, [post.id]: height }));
     const timer = window.setTimeout(() => {
       void commitPendingDelete(post.id);
     }, 5000);
     deleteTimersRef.current.set(post.id, timer);
   }, [commitPendingDelete]);
-  const undoLatestDelete = () => {
-    if (!latestPendingDeleteId) return;
+  const undoPendingDelete = (postId: string) => {
+    const pendingPost = pendingDeletedPosts[postId];
+    if (!pendingPost) return;
 
-    const timer = deleteTimersRef.current.get(latestPendingDeleteId);
+    const timer = deleteTimersRef.current.get(postId);
     if (timer !== undefined) {
       window.clearTimeout(timer);
-      deleteTimersRef.current.delete(latestPendingDeleteId);
+      deleteTimersRef.current.delete(postId);
     }
     setPendingDeletedPosts((current) => {
       const next = { ...current };
-      delete next[latestPendingDeleteId];
+      delete next[postId];
       return next;
     });
-    setLatestPendingDeleteId(null);
+    setPendingDeletedHeights((current) => {
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
   };
   const restoreAllTrash = async () => {
-    if (timelinePosts.length === 0) return;
+    if (posts.length === 0) return;
     await onRestoreAllTrash();
   };
   const emptyTrash = async () => {
-    if (timelinePosts.length === 0) return;
-    if (!confirm(`${timelinePosts.length}件の投稿を完全に削除します。この操作は元に戻せません。`)) return;
+    if (posts.length === 0) return;
+    if (!confirm(`${posts.length}件の投稿を完全に削除します。この操作は元に戻せません。`)) return;
     await onEmptyTrash();
   };
   const getMediaOriginRect = useCallback((index: number) => {
@@ -674,7 +683,7 @@ export function PostFeed({
   }, [hasMoreItems, showMoreItems, totalItemCount, visibleItemCount]);
 
   return (
-    <div className="flex flex-col gap-3 pb-28">
+    <div className="flex flex-col gap-3 pb-[22rem]">
       <div
         className="timeline-top-chrome sticky top-0 z-20 transform-gpu bg-background will-change-transform transition-transform duration-[260ms] ease-out"
       >
@@ -793,13 +802,13 @@ export function PostFeed({
             <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">ゴミ箱</p>
-                <p className="text-xs text-muted-foreground">{timelinePosts.length}件の投稿</p>
+                <p className="text-xs text-muted-foreground">{posts.length}件の投稿</p>
               </div>
               <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                 <button
                   type="button"
                   onClick={restoreAllTrash}
-                  disabled={timelinePosts.length === 0}
+                  disabled={posts.length === 0}
                   className="inline-flex h-9 items-center gap-1 rounded-full border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-40"
                 >
                   <RotateCcw size={14} />
@@ -808,7 +817,7 @@ export function PostFeed({
                 <button
                   type="button"
                   onClick={emptyTrash}
-                  disabled={timelinePosts.length === 0}
+                  disabled={posts.length === 0}
                   className="inline-flex h-9 items-center gap-1 rounded-full bg-red-500 px-3 text-xs font-semibold text-white transition hover:bg-red-600 disabled:opacity-40"
                 >
                   <Trash2 size={14} />
@@ -899,6 +908,33 @@ export function PostFeed({
                 </div>
                 <div className="flex flex-col gap-3">
                   {group.posts.map((post) => {
+                    const pendingDeletedPost = pendingDeletedPosts[post.id];
+                    if (pendingDeletedPost) {
+                      return (
+                        <div
+                          key={post.id}
+                          className="timeline-card-shell"
+                        >
+                          <div
+                            className="flex items-center justify-between gap-3 rounded-[28px] border border-border/80 bg-card px-4 py-3 text-sm text-foreground shadow-[0_1px_0_rgba(255,255,255,0.03)]"
+                            style={{ minHeight: pendingDeletedHeights[post.id] ?? 96 }}
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium">1件削除しました</p>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">{pendingDeletedPost.body || pendingDeletedPost.url || "投稿"}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => undoPendingDelete(post.id)}
+                              className="shrink-0 rounded-full border border-border px-3 py-1.5 text-sm font-semibold text-primary transition hover:bg-muted active:scale-95"
+                            >
+                              元に戻す
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const card = (
                       <PostCard
                         post={post}
@@ -970,27 +1006,14 @@ export function PostFeed({
           initialIndex={Math.min(Math.max(imageViewerRoute.index, 0), visibleMediaItems.length - 1)}
           originRect={imageViewerOriginRect}
           getOriginRect={getMediaOriginRect}
+          onCopyCurrentImage={(index) => {
+            const item = visibleMediaItems[index];
+            if (!item) return;
+            return onPostImageCopy(item.post, item.imageIndex);
+          }}
           onClose={onImageViewerClose}
         />
       )}
-      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 mx-auto flex w-full max-w-md transform-gpu justify-center px-4">
-        <div
-          className={`flex w-full transform-gpu items-center justify-between gap-3 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white shadow-lg transition-[opacity,transform] duration-150 ease-out [contain:paint] ${
-            latestPendingPost ? "pointer-events-auto translate-y-0 opacity-100" : "translate-y-1.5 opacity-0"
-          }`}
-          aria-hidden={!latestPendingPost}
-        >
-          <span className="min-w-0 truncate">1件削除しました</span>
-          <button
-            type="button"
-            onClick={undoLatestDelete}
-            disabled={!latestPendingPost}
-            className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold text-cyan-300 underline underline-offset-4 transition hover:bg-white/10 active:scale-95 disabled:pointer-events-none"
-          >
-            元に戻す
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
