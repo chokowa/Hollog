@@ -1,11 +1,11 @@
 "use client";
 
-import { CalendarDays, Camera, Clipboard, Home, ImagePlus, Plus, User } from "lucide-react";
+import { CalendarDays, Camera, Clipboard, Home, ImagePlus, Plus, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type BottomNavProps = {
-  activeView: "home" | "calendar" | "post" | "profile";
-  onViewChange: (view: "home" | "calendar" | "post" | "profile") => void;
+  activeView: "home" | "calendar" | "post" | "settings";
+  onViewChange: (view: "home" | "calendar" | "post" | "settings") => void;
   onPostClick: () => void;
   onHomeClick?: () => void;
   onQuickImagePost?: () => void;
@@ -163,13 +163,13 @@ export function BottomNav({
           </button>
 
           <button
-            onClick={() => onViewChange("profile")}
+            onClick={() => onViewChange("settings")}
             className={`flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl transition active:scale-95 ${
-              activeView === "profile" ? "text-primary" : "text-muted-foreground"
+              activeView === "settings" ? "text-primary" : "text-muted-foreground"
             }`}
           >
-            <User size={21} />
-            <span className="text-[10px] font-medium text-inherit">プロフィール</span>
+            <Settings size={21} />
+            <span className="text-[10px] font-medium text-inherit">設定</span>
           </button>
         </div>
       </nav>

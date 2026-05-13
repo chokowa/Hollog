@@ -42,7 +42,7 @@ import type { InlineImageSource } from "@/components/ui/post-composer";
 import type { ImageOriginRect, ImageViewerRoute } from "@/types/navigation";
 import type { OgpPreview, Post, PostMediaRef, PostType } from "@/types/post";
 
-type ActiveView = "home" | "calendar" | "post" | "profile" | "detail" | "share" | "settings" | "tag-manager";
+type ActiveView = "home" | "calendar" | "post" | "detail" | "share" | "settings" | "tag-manager";
 type AppHistoryState = {
   bocchiSns: true;
   view: ActiveView;
@@ -2034,12 +2034,8 @@ export default function Home() {
         />
       )}
 
-      {activeView === "profile" && (
-        <div className="p-10 text-center">プロフィール機能は準備中です。</div>
-      )}
-
       <BottomNav
-        activeView={activeView === "profile" ? "profile" : activeView === "calendar" ? "calendar" : "home"}
+        activeView={activeView === "settings" ? "settings" : activeView === "calendar" ? "calendar" : "home"}
         onViewChange={(view) => {
           if (view === "post") {
             openNewComposer();
@@ -2053,6 +2049,9 @@ export default function Home() {
             setTimelineChromeHidden(false);
             resetToCalendar();
             scrollViewportToTop("auto");
+          } else if (view === "settings") {
+            setTimelineChromeHidden(false);
+            pushHistoryState({ bocchiSns: true, view: "settings" });
           } else {
             setTimelineChromeHidden(false);
             pushHistoryState({ bocchiSns: true, view });
