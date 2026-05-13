@@ -78,6 +78,8 @@ export function PostComposer({
   const latestOnChangeRef = useRef(onChange);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const restoreTagFocusRef = useRef(false);
   const imageCount = (value.imageBlobs || []).length + (value.mediaRefs || []).length;
   const previewImageList = useMemo(() => imagePreviewUrls ?? [], [imagePreviewUrls]);
   const previewMediaList = useMemo(() => mediaPreviewUrls ?? [], [mediaPreviewUrls]);
@@ -223,10 +225,27 @@ export function PostComposer({
     onChange({ ...value, tagsText: nextTags });
   };
 
+  const focusTagInput = useCallback(() => {
+    setShowSuggest(true);
+    window.setTimeout(() => {
+      tagInputRef.current?.focus();
+    }, 0);
+  }, []);
+
+  const keepTagInputActive = useCallback(() => {
+    restoreTagFocusRef.current = true;
+    focusTagInput();
+    window.setTimeout(() => {
+      if (!restoreTagFocusRef.current) return;
+      tagInputRef.current?.focus();
+    }, 80);
+  }, [focusTagInput]);
+
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       commitPendingTag();
+      keepTagInputActive();
     } else if (e.key === "Backspace" && tagInput === "" && currentTags.length > 0) {
       removeTag(currentTags[currentTags.length - 1]);
     }
@@ -425,7 +444,14 @@ export function PostComposer({
                   <Tags size={14} />
                   <span>タグ</span>
                 </div>
-                <div className="relative rounded-2xl border border-border bg-muted/20 px-3 py-2.5 transition-colors focus-within:border-muted-foreground">
+                <div
+                  className="relative rounded-2xl border border-border bg-muted/20 px-3 py-2.5 transition-colors focus-within:border-muted-foreground"
+                  onClick={(event) => {
+                    const target = event.target as HTMLElement | null;
+                    if (target?.closest("button")) return;
+                    focusTagInput();
+                  }}
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     {currentTags.map((tag) => (
                       <span
@@ -444,6 +470,7 @@ export function PostComposer({
                       </span>
                     ))}
                     <input
+                      ref={tagInputRef}
                       value={tagInput}
                       onChange={(e) => {
                         setTagInput(e.target.value);
@@ -454,14 +481,23 @@ export function PostComposer({
                         if (nativeEvent.inputType === "insertLineBreak") {
                           event.preventDefault();
                           commitPendingTag();
+                          keepTagInputActive();
                         }
                       }}
                       onKeyDown={handleTagKeyDown}
-                      onFocus={() => setShowSuggest(true)}
+                      onFocus={() => {
+                        restoreTagFocusRef.current = false;
+                        setShowSuggest(true);
+                      }}
                       onBlur={() => setTimeout(() => {
+                        if (restoreTagFocusRef.current) {
+                          keepTagInputActive();
+                          return;
+                        }
                         commitPendingTag();
                         setShowSuggest(false);
                       }, 200)}
+                      enterKeyHint="done"
                       placeholder={currentTags.length === 0 ? "タグを入力..." : "さらに追加..."}
                       className="min-w-[120px] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                     />
@@ -469,7 +505,11 @@ export function PostComposer({
                       type="button"
                       onClick={(e) => {
                         e.preventDefault();
-                        setShowSuggest(!showSuggest);
+                        if (showSuggest) {
+                          setShowSuggest(false);
+                          return;
+                        }
+                        focusTagInput();
                       }}
                       className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted"
                       aria-label="タグ候補を表示"
