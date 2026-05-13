@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Edit3, Filter, Image as ImageIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight, FileText, Filter, Image as ImageIcon, Link2 } from "lucide-react";
 import { TabSwitcher } from "@/components/ui/tab-switcher";
 import type { Post } from "@/types/post";
 
@@ -20,11 +20,21 @@ type CalendarViewProps = {
   onCalendarFilterChange: (state: { activeFilter: CalendarFilter; activeTags: string[] }) => void;
 };
 
+type DateJumpParts = {
+  year: number;
+  month: number;
+  day: number;
+};
+
 const weekLabels = ["日", "月", "火", "水", "木", "金", "土"];
 const compactMetaTextStyle = {
   fontSize: "12px",
   lineHeight: "16px",
 } as const;
+const CALENDAR_MEDIA_SIZE = 52;
+const CALENDAR_MEDIA_EXPANDED_STEP = 44;
+const CALENDAR_MEDIA_COLLAPSED_STEP = 5;
+const CALENDAR_MEDIA_DRAG_THRESHOLD = 28;
 
 function toDateKey(iso: string) {
   const date = new Date(iso);
@@ -99,6 +109,39 @@ function monthKeyToDate(monthKey: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function parseDateKeyParts(dateKey: string): DateJumpParts {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    const today = new Date();
+    return {
+      year: today.getFullYear(),
+      month: today.getMonth() + 1,
+      day: today.getDate(),
+    };
+  }
+
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+  };
+}
+
+function toDateKeyFromParts(parts: DateJumpParts) {
+  const month = `${parts.month}`.padStart(2, "0");
+  const day = `${parts.day}`.padStart(2, "0");
+  return `${parts.year}-${month}-${day}`;
+}
+
+function clampDateJumpParts(parts: DateJumpParts): DateJumpParts {
+  const nextDay = Math.min(parts.day, getDaysInMonth(parts.year, parts.month));
+  return { ...parts, day: nextDay };
+}
+
 function getCalendarDays(monthDate: Date) {
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -118,16 +161,178 @@ function matchesFilter(post: Post, filter: CalendarFilter) {
   return post.type === "posted" && post.postedFrom === filter;
 }
 
-function getTypeLabel(post: Post) {
-  const type = post.type === "posted" ? post.postedFrom : post.type;
-  if (type === "clip") return "クリップ";
-  if (type === "post") return "ポスト";
-  return "投稿済み";
+function getPostKind(post: Post) {
+  return post.type === "posted" ? post.postedFrom : post.type;
+}
+
+function hasPostImages(post: Post) {
+  return Boolean(
+    post.imageBlob
+    || post.imageBlobs?.length
+    || post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image"),
+  );
+}
+
+function hasPostLink(post: Post) {
+  return Boolean(post.url || post.ogp?.title || post.ogp?.image);
+}
+
+function getSavedDestinationTone(post: Post) {
+  const kind = getPostKind(post);
+  if (kind === "clip") {
+    return {
+      icon: "calendar-tone-clip",
+    };
+  }
+
+  return {
+    icon: "calendar-tone-post",
+  };
 }
 
 function getLatestPostDateKey(posts: Post[]) {
   const latestPost = posts[0];
   return latestPost ? toDateKey(latestPost.updatedAt) : toDateKey(new Date().toISOString());
+}
+
+function CalendarMediaStack({ imageUrls }: { imageUrls: string[] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [dragProgress, setDragProgress] = useState<number | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    lockedAxis: "x" | "y" | null;
+    moved: boolean;
+  } | null>(null);
+
+  const visibleImages = imageUrls.slice(0, 4);
+  const overflowCount = Math.max(0, imageUrls.length - visibleImages.length);
+  const currentProgress = dragProgress ?? (isExpanded ? 1 : 0);
+  const expandedWidth = CALENDAR_MEDIA_SIZE + CALENDAR_MEDIA_EXPANDED_STEP * Math.max(0, visibleImages.length - 1);
+  const hitAreaWidth = isExpanded || dragProgress !== null ? expandedWidth : CALENDAR_MEDIA_SIZE;
+
+  const resetDrag = () => {
+    dragStateRef.current = null;
+    setDragProgress(null);
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (visibleImages.length <= 1) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.stopPropagation();
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lockedAxis: null,
+      moved: false,
+    };
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - dragState.startX;
+    const deltaY = event.clientY - dragState.startY;
+
+    if (!dragState.lockedAxis) {
+      if (Math.abs(deltaY) > 8 && Math.abs(deltaY) > Math.abs(deltaX)) {
+        dragState.lockedAxis = "y";
+      } else if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        dragState.lockedAxis = "x";
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+    }
+
+    if (dragState.lockedAxis !== "x") return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    dragState.moved = true;
+    const directionAdjustedDelta = isExpanded ? deltaX : -deltaX;
+    setDragProgress(Math.max(0, Math.min(1, directionAdjustedDelta / 96)));
+  };
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    event.stopPropagation();
+    const deltaX = event.clientX - dragState.startX;
+    const nextProgress = dragProgress ?? 0;
+    if (dragState.lockedAxis === "x") {
+      suppressNextClickRef.current = true;
+      if (isExpanded) {
+        setIsExpanded(!(deltaX > CALENDAR_MEDIA_DRAG_THRESHOLD || nextProgress > 0.35));
+      } else {
+        setIsExpanded(deltaX < -CALENDAR_MEDIA_DRAG_THRESHOLD || nextProgress > 0.35);
+      }
+    }
+    resetDrag();
+  };
+
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClickRef.current) return;
+    suppressNextClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  if (visibleImages.length === 0) {
+    return (
+      <div className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <ImageIcon size={16} />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative h-[52px] justify-self-end overflow-visible touch-pan-y"
+      style={{ width: hitAreaWidth, marginLeft: -(hitAreaWidth - CALENDAR_MEDIA_SIZE) }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+      onClick={handleClick}
+      aria-label={visibleImages.length > 1 ? `${imageUrls.length}枚の画像を展開` : "画像"}
+      title={visibleImages.length > 1 ? "左にスワイプして画像を展開" : undefined}
+    >
+      <div
+        className="absolute right-0 top-0 z-10 h-[52px]"
+        style={{ width: hitAreaWidth }}
+      >
+        {visibleImages.map((url, index) => {
+          const collapsedOffset = -Math.min(index, 3) * CALENDAR_MEDIA_COLLAPSED_STEP;
+          const expandedOffset = -index * CALENDAR_MEDIA_EXPANDED_STEP;
+          const offset = collapsedOffset + (expandedOffset - collapsedOffset) * currentProgress;
+          const scale = 1 - (1 - currentProgress) * Math.min(index, 3) * 0.035;
+          const isLastVisible = index === visibleImages.length - 1;
+          return (
+            <div
+              key={`${url}-${index}`}
+              className="absolute right-0 top-0 h-[52px] w-[52px] overflow-hidden rounded-xl border border-border bg-black/5 shadow-sm transition-[transform,opacity]"
+              style={{
+                zIndex: 10 + index,
+                transform: `translateX(${offset}px) scale(${scale})`,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+              {overflowCount > 0 && isLastVisible && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/45 text-xs font-semibold text-white">
+                  +{overflowCount}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function CalendarView({
@@ -145,6 +350,12 @@ export function CalendarView({
   const didSyncInitialPostDateRef = useRef(false);
   const tagFilterRef = useRef<HTMLDivElement>(null);
   const suppressNextOutsideClickRef = useRef(false);
+  const editLongPressTimerRef = useRef<number | null>(null);
+  const editLongPressTriggeredRef = useRef(false);
+  const yearWheelRef = useRef<HTMLDivElement>(null);
+  const monthWheelRef = useRef<HTMLDivElement>(null);
+  const dayWheelRef = useRef<HTMLDivElement>(null);
+  const wheelScrollTimerRef = useRef<number | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState(() => persistedSelectedDateKey ?? getLatestPostDateKey(posts));
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const persistedMonth = persistedVisibleMonthKey ? monthKeyToDate(persistedVisibleMonthKey) : null;
@@ -152,6 +363,8 @@ export function CalendarView({
     return Number.isNaN(date.getTime()) ? new Date() : date;
   });
   const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
+  const [isDateJumpOpen, setIsDateJumpOpen] = useState(false);
+  const [dateJumpParts, setDateJumpParts] = useState<DateJumpParts>(() => parseDateKeyParts(selectedDateKey));
   const todayKey = toDateKey(new Date().toISOString());
   const activeFilter = persistedActiveFilter;
   const activeTags = persistedActiveTags;
@@ -179,6 +392,35 @@ export function CalendarView({
       visibleMonthKey: toMonthKey(visibleMonth),
     });
   }, [onCalendarStateChange, selectedDateKey, visibleMonth]);
+
+  useEffect(() => {
+    return () => {
+      if (editLongPressTimerRef.current !== null) {
+        window.clearTimeout(editLongPressTimerRef.current);
+      }
+      if (wheelScrollTimerRef.current !== null) {
+        window.clearTimeout(wheelScrollTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isDateJumpOpen) return;
+
+    const scrollToSelected = window.setTimeout(() => {
+      yearWheelRef.current
+        ?.querySelector(`[data-wheel-value="${dateJumpParts.year}"]`)
+        ?.scrollIntoView({ block: "center" });
+      monthWheelRef.current
+        ?.querySelector(`[data-wheel-value="${dateJumpParts.month}"]`)
+        ?.scrollIntoView({ block: "center" });
+      dayWheelRef.current
+        ?.querySelector(`[data-wheel-value="${dateJumpParts.day}"]`)
+        ?.scrollIntoView({ block: "center" });
+    }, 0);
+
+    return () => window.clearTimeout(scrollToSelected);
+  }, [dateJumpParts, isDateJumpOpen]);
 
   useEffect(() => {
     const suppressOutsideClick = (event: MouseEvent) => {
@@ -300,10 +542,37 @@ export function CalendarView({
     return countByFilter;
   }, [selectedDayPosts]);
 
-  const filterTabs = useMemo<Array<{ label: string; value: CalendarFilter; count: number }>>(() => ([
+  const filterTabs = useMemo<Array<{
+    label: string;
+    value: CalendarFilter;
+    count: number;
+    activeClassName?: string;
+    activeCountClassName?: string;
+    activeIndicatorClassName?: string;
+    inactiveClassName?: string;
+    inactiveCountClassName?: string;
+  }>>(() => ([
     { label: "すべて", value: "all", count: filterCounts.all },
-    { label: "ポスト", value: "post", count: filterCounts.post },
-    { label: "クリップ", value: "clip", count: filterCounts.clip },
+    {
+      label: "ポスト",
+      value: "post",
+      count: filterCounts.post,
+      activeClassName: "calendar-tab-post",
+      activeCountClassName: "calendar-tab-post-count",
+      activeIndicatorClassName: "calendar-tab-post-indicator",
+      inactiveClassName: "calendar-tab-post-muted",
+      inactiveCountClassName: "calendar-tab-post-count-muted",
+    },
+    {
+      label: "クリップ",
+      value: "clip",
+      count: filterCounts.clip,
+      activeClassName: "calendar-tab-clip",
+      activeCountClassName: "calendar-tab-clip-count",
+      activeIndicatorClassName: "calendar-tab-clip-indicator",
+      inactiveClassName: "calendar-tab-clip-muted",
+      inactiveCountClassName: "calendar-tab-clip-count-muted",
+    },
   ]), [filterCounts]);
 
   const selectedPosts = useMemo(() => {
@@ -311,9 +580,77 @@ export function CalendarView({
   }, [activeFilter, selectedDayPosts]);
 
   const calendarDays = useMemo(() => getCalendarDays(visibleMonth), [visibleMonth]);
+  const dateJumpYears = useMemo(
+    () => Array.from({ length: 13 }, (_, index) => dateJumpParts.year - 6 + index),
+    [dateJumpParts.year],
+  );
+  const dateJumpDays = useMemo(
+    () => Array.from({ length: getDaysInMonth(dateJumpParts.year, dateJumpParts.month) }, (_, index) => index + 1),
+    [dateJumpParts.month, dateJumpParts.year],
+  );
 
   const shiftMonth = (offset: number) => {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  };
+
+  const jumpToDate = (dateKey: string) => {
+    const nextDate = new Date(`${dateKey}T00:00:00`);
+    if (Number.isNaN(nextDate.getTime())) return;
+
+    didSyncInitialPostDateRef.current = true;
+    setSelectedDateKey(dateKey);
+    setVisibleMonth(nextDate);
+    setIsDateJumpOpen(false);
+  };
+
+  const setDateJumpPart = (nextPart: Partial<DateJumpParts>) => {
+    setDateJumpParts((current) => clampDateJumpParts({ ...current, ...nextPart }));
+  };
+
+  const syncWheelSelection = (
+    wheel: HTMLDivElement | null,
+    part: keyof DateJumpParts,
+  ) => {
+    if (!wheel) return;
+
+    const wheelRect = wheel.getBoundingClientRect();
+    const wheelCenter = wheelRect.top + wheelRect.height / 2;
+    const items = Array.from(wheel.querySelectorAll<HTMLElement>("[data-wheel-value]"));
+    let closestValue: number | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    items.forEach((item) => {
+      const itemRect = item.getBoundingClientRect();
+      const itemCenter = itemRect.top + itemRect.height / 2;
+      const distance = Math.abs(itemCenter - wheelCenter);
+      if (distance >= closestDistance) return;
+
+      const value = Number(item.dataset.wheelValue);
+      if (!Number.isFinite(value)) return;
+      closestDistance = distance;
+      closestValue = value;
+    });
+
+    if (closestValue === null) return;
+    setDateJumpPart({ [part]: closestValue } as Partial<DateJumpParts>);
+  };
+
+  const scheduleWheelSelection = (
+    wheel: HTMLDivElement | null,
+    part: keyof DateJumpParts,
+  ) => {
+    if (wheelScrollTimerRef.current !== null) {
+      window.clearTimeout(wheelScrollTimerRef.current);
+    }
+    wheelScrollTimerRef.current = window.setTimeout(() => {
+      wheelScrollTimerRef.current = null;
+      syncWheelSelection(wheel, part);
+    }, 90);
+  };
+
+  const openDateJump = () => {
+    setDateJumpParts(parseDateKeyParts(selectedDateKey));
+    setIsDateJumpOpen(true);
   };
 
   const selectToday = () => {
@@ -321,6 +658,26 @@ export function CalendarView({
     didSyncInitialPostDateRef.current = true;
     setSelectedDateKey(todayKey);
     setVisibleMonth(today);
+    setDateJumpParts(parseDateKeyParts(todayKey));
+    setIsDateJumpOpen(false);
+  };
+
+  const beginEditLongPress = (post: Post) => {
+    editLongPressTriggeredRef.current = false;
+    if (editLongPressTimerRef.current !== null) {
+      window.clearTimeout(editLongPressTimerRef.current);
+    }
+    editLongPressTimerRef.current = window.setTimeout(() => {
+      editLongPressTimerRef.current = null;
+      editLongPressTriggeredRef.current = true;
+      onPostEdit(post);
+    }, 520);
+  };
+
+  const cancelEditLongPress = () => {
+    if (editLongPressTimerRef.current === null) return;
+    window.clearTimeout(editLongPressTimerRef.current);
+    editLongPressTimerRef.current = null;
   };
 
   return (
@@ -414,11 +771,143 @@ export function CalendarView({
               </div>
             )}
           </div>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border text-primary">
+          <button
+            type="button"
+            onClick={openDateJump}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border text-primary transition hover:bg-muted"
+            aria-label="日付を選択"
+          >
             <CalendarDays size={18} />
-          </div>
+          </button>
         </div>
       </header>
+
+      {isDateJumpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="日付を選択"
+          onClick={() => setIsDateJumpOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-[24px] border border-border bg-background p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-foreground" style={{ fontSize: 16, lineHeight: "22px" }}>日付を選択</p>
+                <p className="text-muted-foreground" style={{ fontSize: 12, lineHeight: "16px" }}>
+                  {dateJumpParts.year}年{dateJumpParts.month}月{dateJumpParts.day}日
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={selectToday}
+                className="rounded-full bg-secondary px-3 py-1.5 font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                style={{ fontSize: 12, lineHeight: "16px" }}
+              >
+                今日
+              </button>
+            </div>
+
+            <div className="relative grid grid-cols-[1.15fr_0.85fr_0.85fr] gap-2 overflow-hidden rounded-[22px] border border-border bg-card p-2">
+              <div className="pointer-events-none absolute inset-x-2 top-1/2 h-10 -translate-y-1/2 rounded-2xl bg-primary/10 ring-1 ring-primary/15" />
+              <div className="pointer-events-none absolute inset-x-2 top-2 h-8 bg-gradient-to-b from-card to-transparent" />
+              <div className="pointer-events-none absolute inset-x-2 bottom-2 h-8 bg-gradient-to-t from-card to-transparent" />
+              <div
+                ref={yearWheelRef}
+                onScroll={() => scheduleWheelSelection(yearWheelRef.current, "year")}
+                className="relative z-10 h-36 overflow-y-auto overscroll-contain py-12 screen-scroll snap-y snap-mandatory"
+                aria-label="年"
+              >
+                {dateJumpYears.map((year) => {
+                  const active = year === dateJumpParts.year;
+                  return (
+                    <button
+                      key={year}
+                      type="button"
+                      data-wheel-value={year}
+                      onClick={() => setDateJumpPart({ year })}
+                      className={`flex h-10 w-full snap-center items-center justify-center rounded-2xl font-medium transition ${
+                        active ? "text-foreground" : "text-muted-foreground/55"
+                      }`}
+                      style={{ fontSize: active ? 17 : 14, lineHeight: "20px" }}
+                    >
+                      {year}年
+                    </button>
+                  );
+                })}
+              </div>
+              <div
+                ref={monthWheelRef}
+                onScroll={() => scheduleWheelSelection(monthWheelRef.current, "month")}
+                className="relative z-10 h-36 overflow-y-auto overscroll-contain py-12 screen-scroll snap-y snap-mandatory"
+                aria-label="月"
+              >
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => {
+                  const active = month === dateJumpParts.month;
+                  return (
+                    <button
+                      key={month}
+                      type="button"
+                      data-wheel-value={month}
+                      onClick={() => setDateJumpPart({ month })}
+                      className={`flex h-10 w-full snap-center items-center justify-center rounded-2xl font-medium transition ${
+                        active ? "text-foreground" : "text-muted-foreground/55"
+                      }`}
+                      style={{ fontSize: active ? 17 : 14, lineHeight: "20px" }}
+                    >
+                      {month}月
+                    </button>
+                  );
+                })}
+              </div>
+              <div
+                ref={dayWheelRef}
+                onScroll={() => scheduleWheelSelection(dayWheelRef.current, "day")}
+                className="relative z-10 h-36 overflow-y-auto overscroll-contain py-12 screen-scroll snap-y snap-mandatory"
+                aria-label="日"
+              >
+                {dateJumpDays.map((day) => {
+                  const active = day === dateJumpParts.day;
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      data-wheel-value={day}
+                      onClick={() => setDateJumpPart({ day })}
+                      className={`flex h-10 w-full snap-center items-center justify-center rounded-2xl font-medium transition ${
+                        active ? "text-foreground" : "text-muted-foreground/55"
+                      }`}
+                      style={{ fontSize: active ? 17 : 14, lineHeight: "20px" }}
+                    >
+                      {day}日
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDateJumpOpen(false)}
+                className="h-11 rounded-2xl border border-border font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToDate(toDateKeyFromParts(dateJumpParts))}
+                className="h-11 rounded-2xl bg-primary font-semibold text-primary-foreground shadow-sm transition active:scale-[0.99]"
+              >
+                移動
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         <section className="shrink-0 rounded-[24px] border border-border bg-card px-4 py-3 shadow-sm">
@@ -461,15 +950,7 @@ export function CalendarView({
             {calendarDays.map((date) => {
               const dateKey = toDateKey(date.toISOString());
               const dayPosts = postsByDate.get(dateKey) ?? [];
-              const dayIndicators = [
-                { key: "post", visible: dayPosts.some((post) => matchesFilter(post, "post")), className: "bg-primary" },
-                { key: "clip", visible: dayPosts.some((post) => matchesFilter(post, "clip")), className: "bg-emerald-400" },
-                { key: "media", visible: dayPosts.some((post) => (
-                  Boolean(post.imageBlob)
-                  || Boolean(post.imageBlobs?.length)
-                  || Boolean(post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image"))
-                )), className: "bg-orange-400" },
-              ].filter((indicator) => indicator.visible);
+              const hasPosts = dayPosts.length > 0;
               const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
               const isSelected = dateKey === selectedDateKey;
               const isToday = dateKey === todayKey;
@@ -484,7 +965,7 @@ export function CalendarView({
                   }}
                   className={`relative flex h-9 flex-col items-center justify-center rounded-2xl transition active:scale-95 ${
                     isSelected
-                      ? "bg-primary text-primary-foreground shadow-sm"
+                      ? "bg-primary/12 text-primary ring-1 ring-primary/35"
                       : isCurrentMonth
                         ? "text-foreground hover:bg-muted"
                         : "text-muted-foreground/40 hover:bg-muted/50"
@@ -494,14 +975,9 @@ export function CalendarView({
                   <span className={isToday && !isSelected ? "font-bold text-primary" : "font-medium"}>
                     {date.getDate()}
                   </span>
-                  {dayIndicators.length > 0 && (
+                  {hasPosts && (
                     <span className="mt-1 flex h-1.5 items-center justify-center gap-0.5" aria-label={`${dayPosts.length}件の投稿`}>
-                      {dayIndicators.slice(0, 3).map((indicator) => (
-                        <span
-                          key={indicator.key}
-                          className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-primary-foreground" : indicator.className}`}
-                        />
-                      ))}
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                     </span>
                   )}
                 </button>
@@ -540,21 +1016,56 @@ export function CalendarView({
           ) : (
             <div className="mt-3 flex flex-col gap-2 pb-4">
               {selectedPosts.map((post) => {
-                const imageUrl = postThumbnailUrlMap[post.id]?.[0] ?? post.ogp?.image ?? "";
+                const postImageUrls = postThumbnailUrlMap[post.id] ?? [];
+                const previewImageUrls = postImageUrls.length > 0
+                  ? postImageUrls
+                  : post.ogp?.image
+                    ? [post.ogp.image]
+                    : [];
+                const bodyLabel = post.body || (previewImageUrls.length > 0 ? `画像 ${previewImageUrls.length}枚` : "本文なし");
+                const destinationTone = getSavedDestinationTone(post);
+                const statusIconClass = `flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${destinationTone.icon}`;
                 return (
                   <article
                     key={post.id}
-                    onClick={() => onPostClick(post.id)}
-                    className="grid cursor-pointer grid-cols-[42px_minmax(0,1fr)_52px_28px] items-center gap-2.5 rounded-[20px] border border-border bg-card px-2.5 py-2.5 shadow-sm transition hover:border-muted-foreground/30 active:scale-[0.997]"
+                    onClick={(event) => {
+                      cancelEditLongPress();
+                      if (editLongPressTriggeredRef.current) {
+                        editLongPressTriggeredRef.current = false;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                      }
+                      onPostClick(post.id);
+                    }}
+                    onPointerDown={() => beginEditLongPress(post)}
+                    onPointerMove={cancelEditLongPress}
+                    onPointerUp={cancelEditLongPress}
+                    onPointerCancel={cancelEditLongPress}
+                    onPointerLeave={cancelEditLongPress}
+                    className="grid cursor-pointer grid-cols-[42px_minmax(0,1fr)_52px] items-center gap-2.5 rounded-[20px] border border-border bg-card px-2.5 py-2.5 shadow-sm transition hover:border-muted-foreground/30 active:scale-[0.997]"
+                    title="長押しで編集"
                   >
                     <div className="text-center font-medium text-muted-foreground" style={{ fontSize: 12, lineHeight: "16px" }}>
                       {formatTime(post.updatedAt)}
                     </div>
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="shrink-0 rounded-full bg-secondary px-2 py-[1px] font-medium text-muted-foreground" style={compactMetaTextStyle}>
-                          {getTypeLabel(post)}
-                        </span>
+                        {post.body.trim() && (
+                          <span className={statusIconClass} aria-label="テキストあり">
+                            <FileText size={12} />
+                          </span>
+                        )}
+                        {hasPostLink(post) && (
+                          <span className={statusIconClass} aria-label="リンクあり">
+                            <Link2 size={12} />
+                          </span>
+                        )}
+                        {hasPostImages(post) && (
+                          <span className={statusIconClass} aria-label="画像あり">
+                            <ImageIcon size={12} />
+                          </span>
+                        )}
                         {post.tags.length > 0 && (
                           <span className="min-w-0 truncate rounded-full bg-secondary px-2 py-[1px] font-medium text-muted-foreground" style={compactMetaTextStyle}>
                             #{post.tags[0]}
@@ -562,30 +1073,10 @@ export function CalendarView({
                         )}
                       </div>
                       <p className="mt-1 truncate font-medium text-foreground" style={{ fontSize: 14, lineHeight: "19px" }}>
-                        {post.body || "本文なし"}
+                        {bodyLabel}
                       </p>
                     </div>
-                    {imageUrl ? (
-                      <div className="h-[52px] w-[52px] overflow-hidden rounded-xl bg-black/5">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={imageUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                      </div>
-                    ) : (
-                      <div className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                        <ImageIcon size={16} />
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onPostEdit(post);
-                      }}
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      aria-label="編集"
-                    >
-                      <Edit3 size={14} />
-                    </button>
+                    <CalendarMediaStack imageUrls={previewImageUrls} />
                   </article>
                 );
               })}

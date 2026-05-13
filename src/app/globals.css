@@ -21,6 +21,10 @@
   --input: #e4e4e7;
   --ring: #030213;
   --radius: 1rem;
+  --calendar-post-accent: #9a6b5f;
+  --calendar-post-accent-soft: color-mix(in srgb, var(--calendar-post-accent) 12%, transparent);
+  --calendar-clip-accent: #58746d;
+  --calendar-clip-accent-soft: color-mix(in srgb, var(--calendar-clip-accent) 12%, transparent);
 }
 
 .dark {
@@ -43,6 +47,10 @@
   --border: #27272a;
   --input: #27272a;
   --ring: #d4d4d8;
+  --calendar-post-accent: #d89a86;
+  --calendar-post-accent-soft: color-mix(in srgb, var(--calendar-post-accent) 14%, transparent);
+  --calendar-clip-accent: #8fb3a8;
+  --calendar-clip-accent-soft: color-mix(in srgb, var(--calendar-clip-accent) 13%, transparent);
 }
 
 @theme inline {
@@ -288,6 +296,70 @@ html[data-timeline-chrome="hidden"] .timeline-post-fab {
 .timeline-media-shell {
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
+}
+
+.calendar-tone-post {
+  background: var(--calendar-post-accent-soft);
+  color: var(--calendar-post-accent);
+}
+
+.calendar-tone-clip {
+  background: var(--calendar-clip-accent-soft);
+  color: var(--calendar-clip-accent);
+}
+
+.calendar-tab-post {
+  border-color: var(--calendar-post-accent);
+  color: var(--calendar-post-accent);
+}
+
+.calendar-tab-clip {
+  border-color: var(--calendar-clip-accent);
+  color: var(--calendar-clip-accent);
+}
+
+.calendar-tab-post-muted {
+  color: color-mix(in srgb, var(--calendar-post-accent) 72%, var(--muted-foreground));
+}
+
+.calendar-tab-post-muted:hover {
+  color: var(--calendar-post-accent);
+}
+
+.calendar-tab-clip-muted {
+  color: color-mix(in srgb, var(--calendar-clip-accent) 74%, var(--muted-foreground));
+}
+
+.calendar-tab-clip-muted:hover {
+  color: var(--calendar-clip-accent);
+}
+
+.calendar-tab-post-count {
+  background: var(--calendar-post-accent-soft);
+  color: var(--calendar-post-accent);
+}
+
+.calendar-tab-clip-count {
+  background: var(--calendar-clip-accent-soft);
+  color: var(--calendar-clip-accent);
+}
+
+.calendar-tab-post-count-muted {
+  background: color-mix(in srgb, var(--calendar-post-accent) 8%, var(--secondary));
+  color: color-mix(in srgb, var(--calendar-post-accent) 70%, var(--muted-foreground));
+}
+
+.calendar-tab-clip-count-muted {
+  background: color-mix(in srgb, var(--calendar-clip-accent) 8%, var(--secondary));
+  color: color-mix(in srgb, var(--calendar-clip-accent) 72%, var(--muted-foreground));
+}
+
+.calendar-tab-post-indicator {
+  background: var(--calendar-post-accent);
+}
+
+.calendar-tab-clip-indicator {
+  background: var(--calendar-clip-accent);
 }
 
 .image-viewer-nav-button {

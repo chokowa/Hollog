@@ -4,7 +4,16 @@ import { useState, useRef, useEffect } from "react";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
 
 type TabSwitcherProps = {
-  tabs: Array<{ label: string; value: string; count?: number }>;
+  tabs: Array<{
+    label: string;
+    value: string;
+    count?: number;
+    activeClassName?: string;
+    activeCountClassName?: string;
+    activeIndicatorClassName?: string;
+    inactiveClassName?: string;
+    inactiveCountClassName?: string;
+  }>;
   value: string;
   onChange: (nextTab: string) => void;
 };
@@ -79,6 +88,10 @@ export function TabSwitcher({ tabs, value, onChange }: TabSwitcherProps) {
         <div className="flex min-w-0 items-end gap-4 sm:gap-6">
           {mainTabs.map((tab) => {
             const active = tab.value === value;
+            const activeClassName = tab.activeClassName ?? "text-foreground border-primary";
+            const activeCountClassName = tab.activeCountClassName ?? "bg-primary/12 text-primary";
+            const inactiveClassName = tab.inactiveClassName ?? "text-muted-foreground hover:text-foreground";
+            const inactiveCountClassName = tab.inactiveCountClassName ?? "bg-secondary text-muted-foreground";
             return (
               <button
                 key={tab.value}
@@ -89,15 +102,15 @@ export function TabSwitcher({ tabs, value, onChange }: TabSwitcherProps) {
                 }}
                 className={`inline-flex min-w-0 items-center justify-center pb-2 px-1 whitespace-nowrap transition-colors ${
                   active
-                    ? "text-foreground border-b-2 border-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? `border-b-2 font-medium ${activeClassName}`
+                    : inactiveClassName
                 }`}
                 style={{ fontSize: 12, lineHeight: "17px" }}
               >
                 <span className="truncate">{tab.label}</span>
                 {typeof tab.count === "number" && (
                   <span className={`ml-1 shrink-0 rounded-full px-1.5 py-[1px] text-[11px] leading-none ${
-                    active ? "bg-primary/12 text-primary" : "bg-secondary text-muted-foreground"
+                    active ? activeCountClassName : inactiveCountClassName
                   }`}>
                     {tab.count}
                   </span>
@@ -114,7 +127,7 @@ export function TabSwitcher({ tabs, value, onChange }: TabSwitcherProps) {
               onClick={() => setIsOpen(!isOpen)}
               className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
                 isMoreActive
-                  ? "bg-primary/10 text-primary"
+                  ? activeMoreTab.activeCountClassName ?? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
               aria-label="その他のタブ"
@@ -130,7 +143,7 @@ export function TabSwitcher({ tabs, value, onChange }: TabSwitcherProps) {
             </button>
 
             {isMoreActive && (
-              <div className="absolute bottom-0 left-1 right-1 h-[2px] bg-primary" />
+              <div className={`absolute bottom-0 left-1 right-1 h-[2px] ${activeMoreTab.activeIndicatorClassName ?? "bg-primary"}`} />
             )}
 
             {isOpen && (
@@ -145,14 +158,16 @@ export function TabSwitcher({ tabs, value, onChange }: TabSwitcherProps) {
                       }}
                       className={`flex w-full items-center px-4 py-3 text-left text-sm transition-colors ${
                         tab.value === value
-                          ? "bg-primary/5 text-primary font-medium"
-                          : "text-foreground hover:bg-muted"
+                          ? `font-medium ${tab.activeCountClassName ?? "bg-primary/5 text-primary"}`
+                          : tab.inactiveClassName ?? "text-foreground hover:bg-muted"
                       }`}
                     >
                       <span>{tab.label}</span>
                       {typeof tab.count === "number" && (
                         <span className={`ml-2 rounded-full px-1.5 py-[1px] text-[11px] leading-none ${
-                          tab.value === value ? "bg-primary/12 text-primary" : "bg-secondary text-muted-foreground"
+                          tab.value === value
+                            ? tab.activeCountClassName ?? "bg-primary/12 text-primary"
+                            : tab.inactiveCountClassName ?? "bg-secondary text-muted-foreground"
                         }`}>
                           {tab.count}
                         </span>
