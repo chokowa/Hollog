@@ -533,6 +533,22 @@ export default function Home() {
     const hiddenTagSet = new Set(hiddenTags);
     return activePosts.filter((post) => !post.tags.some((tag) => hiddenTagSet.has(tag)));
   }, [hiddenTags, posts]);
+  const handleCalendarStateChange = useCallback((nextState: { selectedDateKey: string; visibleMonthKey: string }) => {
+    setCalendarState((current) => (
+      current.selectedDateKey === nextState.selectedDateKey && current.visibleMonthKey === nextState.visibleMonthKey
+        ? current
+        : { ...current, ...nextState }
+    ));
+  }, []);
+  const handleCalendarFilterChange = useCallback((nextFilterState: { activeFilter: CalendarFilter; activeTags: string[] }) => {
+    setCalendarState((current) => (
+      current.activeFilter === nextFilterState.activeFilter
+        && current.activeTags.length === nextFilterState.activeTags.length
+        && current.activeTags.every((tag, index) => tag === nextFilterState.activeTags[index])
+        ? current
+        : { ...current, ...nextFilterState }
+    ));
+  }, []);
 
   useEffect(() => {
     postsRef.current = posts;
@@ -2150,12 +2166,8 @@ export default function Home() {
           persistedVisibleMonthKey={calendarState.visibleMonthKey}
           persistedActiveFilter={calendarState.activeFilter}
           persistedActiveTags={calendarState.activeTags}
-          onCalendarStateChange={(nextState) => {
-            setCalendarState((current) => ({ ...current, ...nextState }));
-          }}
-          onCalendarFilterChange={(nextFilterState) => {
-            setCalendarState((current) => ({ ...current, ...nextFilterState }));
-          }}
+          onCalendarStateChange={handleCalendarStateChange}
+          onCalendarFilterChange={handleCalendarFilterChange}
         />
       )}
 

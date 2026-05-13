@@ -388,7 +388,7 @@ export function PostComposer({
       </div>
 
       <div className="space-y-4">
-        <div className={`rounded-[28px] border bg-card p-4 shadow-sm transition-all ${
+        <div className={`rounded-[22px] border bg-card p-4 shadow-sm transition-all ${
             isBodyFocused
               ? "border-primary/40 shadow-[0_0_0_3px_rgba(255,255,255,0.05)]"
               : "border-border"
@@ -558,8 +558,8 @@ export function PostComposer({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+            <div className="flex items-end justify-between gap-3">
+                <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
                 <input
                   ref={imageInputRef}
                   type="file"
@@ -586,31 +586,34 @@ export function PostComposer({
                     imageInputRef.current?.click();
                   }}
                   disabled={imageCount >= 4}
-                  className="flex h-11 min-w-11 items-center justify-center rounded-2xl border border-border bg-card px-3 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                  className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-card px-2 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                   title="画像を追加"
                   aria-label="画像を追加"
                 >
                   <ImagePlus size={20} />
+                  <span className="text-[11px] font-medium">画像</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => cameraInputRef.current?.click()}
                   disabled={imageCount >= 4}
-                  className="flex h-11 min-w-11 items-center justify-center rounded-2xl border border-border bg-card px-3 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                  className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-card px-2 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                   title="カメラで撮影"
                   aria-label="カメラで撮影"
                 >
                   <Camera size={20} />
+                  <span className="text-[11px] font-medium">カメラ</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleClipboardRead}
                   disabled={imageCount >= 4}
-                  className="flex h-11 min-w-11 items-center justify-center rounded-2xl border border-border bg-card px-3 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                  className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-card px-2 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                   title="コピーした画像を貼り付け"
                   aria-label="コピーした画像を貼り付け"
                 >
                   <Clipboard size={20} />
+                  <span className="text-[11px] font-medium">貼付</span>
                 </button>
               </div>
               <div className="text-right text-xs text-muted-foreground">
@@ -621,7 +624,7 @@ export function PostComposer({
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
           <div className="mb-4">
             <p className="mb-2 text-xs font-medium text-muted-foreground">リンク</p>
             <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/20 px-3 py-2.5 shadow-sm transition-colors focus-within:border-muted-foreground">

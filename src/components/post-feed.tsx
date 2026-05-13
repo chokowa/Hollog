@@ -960,7 +960,7 @@ export function PostFeed({
                           className="timeline-card-shell"
                         >
                           <div
-                            className="flex items-center justify-between gap-3 rounded-[28px] border border-border/80 bg-card px-4 py-3 text-sm text-foreground shadow-[0_1px_0_rgba(255,255,255,0.03)]"
+                            className="flex items-center justify-between gap-3 rounded-[22px] border border-border/80 bg-card px-4 py-3 text-sm text-foreground shadow-[0_1px_0_rgba(255,255,255,0.03)]"
                             style={{ minHeight: pendingDeletedHeights[post.id] ?? 96 }}
                           >
                             <div className="min-w-0">
@@ -1008,7 +1008,7 @@ export function PostFeed({
                         className="timeline-card-shell"
                       >
                         {activeTab === "trash" ? (
-                          <div className="overflow-hidden rounded-[30px] border border-border/80 bg-card shadow-[0_1px_0_rgba(255,255,255,0.03)]">
+                          <div className="overflow-hidden rounded-[22px] border border-border/80 bg-card shadow-[0_1px_0_rgba(255,255,255,0.03)]">
                             <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/25 px-4 py-2 text-xs text-muted-foreground">
                               <span className="inline-flex min-w-0 items-center gap-1.5">
                                 <Clock3 size={13} />

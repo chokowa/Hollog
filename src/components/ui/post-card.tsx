@@ -34,8 +34,8 @@ type PostCardProps = {
 
 type SectionPlacement = "first" | "middle" | "last" | "only";
 
-const COMPACT_CARD_EDGE_Y_CLASS = "py-3";
-const COMPACT_CARD_SECTION_GAP_CLASS = "mb-2.5";
+const COMPACT_CARD_EDGE_Y_CLASS = "py-2.5";
+const COMPACT_CARD_SECTION_GAP_CLASS = "mb-2";
 
 function formatTime(iso: string) {
   try {
@@ -133,7 +133,7 @@ function PostCardComponent({
   const ogp = post.ogp ?? fetchedOgp;
   const cardSurfaceClass = isDetail
     ? "post-card-surface cursor-pointer overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-muted-foreground/30 hover:shadow-md active:scale-[0.997]"
-    : `post-card-surface cursor-pointer overflow-hidden rounded-[28px] border border-border/80 bg-card px-4 ${COMPACT_CARD_EDGE_Y_CLASS} shadow-[0_1px_0_rgba(255,255,255,0.03)] transition hover:border-muted-foreground/25 hover:bg-card/95`;
+    : `post-card-surface cursor-pointer overflow-hidden rounded-[22px] border border-border/80 bg-card px-3.5 ${COMPACT_CARD_EDGE_Y_CLASS} shadow-[0_1px_0_rgba(255,255,255,0.03)] transition hover:border-muted-foreground/25 hover:bg-card/95`;
   const compactUrlButtonClass = isDetail
     ? "w-full rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
     : "w-full rounded-2xl border border-border/80 bg-muted/35 px-3 py-2.5 text-left transition-colors hover:bg-muted/55";
@@ -142,7 +142,7 @@ function PostCardComponent({
     : "mt-2 w-full overflow-hidden rounded-[22px] border border-border/80 bg-muted/25 text-left transition-colors hover:bg-muted/45";
 
   const getFlushWrapperClass = (placement: SectionPlacement) => {
-    const horizontal = isDetail ? "-mx-5" : "-mx-4";
+    const horizontal = isDetail ? "-mx-5" : "-mx-3.5";
     const top = placement === "first" || placement === "only" ? (isDetail ? "-mt-5" : "-mt-3") : "";
     const bottom = placement === "last" || placement === "only"
       ? (isDetail ? "-mb-5" : "-mb-3")
@@ -158,9 +158,9 @@ function PostCardComponent({
       return "";
     }
 
-    if (placement === "only") return "rounded-[28px]";
-    if (placement === "first") return "rounded-t-[28px]";
-    if (placement === "last") return "rounded-b-[28px]";
+    if (placement === "only") return "rounded-[22px]";
+    if (placement === "first") return "rounded-t-[22px]";
+    if (placement === "last") return "rounded-b-[22px]";
     return "";
   };
 
@@ -170,7 +170,7 @@ function PostCardComponent({
     }
     return isDetail
       ? "mb-4 overflow-hidden rounded-xl border border-border bg-black/5"
-      : "overflow-hidden rounded-2xl border border-border/80 bg-black/5";
+      : "overflow-hidden rounded-[18px] border border-border/80 bg-black/5";
   };
 
   useEffect(() => {
@@ -493,7 +493,7 @@ function PostCardComponent({
       return (
         <div
           data-card-media
-          className={`${mediaBlockClass} aspect-[4/3]`}
+          className={`${mediaBlockClass} aspect-[16/10]`}
         >
           {brokenImageUrls.has(imageUrls[0]) ? renderBrokenImage("h-full w-full") : (
             <img
@@ -514,7 +514,7 @@ function PostCardComponent({
       return (
         <div
           data-card-media
-          className={`${mediaBlockClass} grid aspect-[4/3] grid-cols-2 gap-1`}
+          className={`${mediaBlockClass} grid aspect-[2/1] grid-cols-2 gap-1`}
         >
           {imageUrls.map((url, i) => (
             brokenImageUrls.has(url)
@@ -529,7 +529,7 @@ function PostCardComponent({
       return (
         <div
           data-card-media
-          className={`${mediaBlockClass} grid aspect-[4/3] grid-cols-[1.35fr_1fr] gap-1`}
+          className={`${mediaBlockClass} grid aspect-[16/10] grid-cols-[1.35fr_1fr] gap-1`}
         >
           {brokenImageUrls.has(imageUrls[0])
             ? renderBrokenImage("h-full w-full")
@@ -549,7 +549,7 @@ function PostCardComponent({
       return (
         <div
           data-card-media
-          className={`${mediaBlockClass} grid aspect-[4/3] grid-cols-2 grid-rows-2 gap-1`}
+          className={`${mediaBlockClass} grid aspect-[16/10] grid-cols-2 grid-rows-2 gap-1`}
         >
           {imageUrls.slice(0, 4).map((url, i) => (
             brokenImageUrls.has(url)
@@ -622,6 +622,13 @@ function PostCardComponent({
     const previewCardClass = placement
       ? `w-full overflow-hidden bg-muted/25 text-left transition-colors hover:bg-muted/45 ${getFlushRadiusClass(placement)}`
       : compactOgpCardClass.replace(/^mt-2\s+/, "");
+    const hostLabel = (() => {
+      try {
+        return new URL(post.url).hostname.replace(/^www\./, "");
+      } catch {
+        return post.url;
+      }
+    })();
 
     return (
       <div className={placement ? "" : isDetail ? "mb-4" : ""}>
@@ -639,22 +646,43 @@ function PostCardComponent({
             }}
             className={previewCardClass}
           >
-            {ogp.image && (
+            {!isDetail && ogp.image ? (
+              <div className="flex min-h-[88px] items-stretch">
+                <div className="w-[36%] max-w-36 shrink-0 overflow-hidden bg-black/5">
+                  <img src={ogp.image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col justify-center px-3 py-2.5">
+                  {ogp.siteName && (
+                    <p className="mb-1 truncate text-[11px] font-medium text-muted-foreground">{ogp.siteName}</p>
+                  )}
+                  {ogp.title && (
+                    <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{ogp.title}</p>
+                  )}
+                  {ogp.description && (
+                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{ogp.description}</p>
+                  )}
+                  <p className="mt-1 truncate text-[11px] text-muted-foreground/80">{hostLabel}</p>
+                </div>
+              </div>
+            ) : ogp.image && (
               <div className="aspect-video w-full overflow-hidden bg-black/5">
                 <img src={ogp.image} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
               </div>
             )}
-            <div className={isDetail ? "p-3" : "px-3 py-2.5"}>
-              {ogp.siteName && (
-                <p className="text-xs text-muted-foreground mb-1">{ogp.siteName}</p>
-              )}
-              {ogp.title && (
-                <p className="text-sm font-medium text-foreground line-clamp-2">{ogp.title}</p>
-              )}
-              {ogp.description && (
-                <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{ogp.description}</p>
-              )}
-            </div>
+            {(isDetail || !ogp.image) && (
+              <div className={isDetail ? "p-3" : "px-3 py-2.5"}>
+                {ogp.siteName && (
+                  <p className="text-xs text-muted-foreground mb-1">{ogp.siteName}</p>
+                )}
+                {ogp.title && (
+                  <p className="text-sm font-medium text-foreground line-clamp-2">{ogp.title}</p>
+                )}
+                {ogp.description && (
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{ogp.description}</p>
+                )}
+                {!isDetail && <p className="mt-1 truncate text-[11px] text-muted-foreground/80">{hostLabel}</p>}
+              </div>
+            )}
           </button>
         )}
       </div>
@@ -833,9 +861,10 @@ function PostCardComponent({
 
   const resolvedSectionOrder = isDetail ? DEFAULT_POST_CARD_SECTION_ORDER : sectionOrder;
   const hasSectionContent = (section: PostCardSection) => {
-    if (section === "url") return Boolean(post.url);
+    if (section === "url") return Boolean(post.url) && (isDetail || !(ogp && (ogp.title || ogp.image)));
     if (section === "preview") return Boolean(post.url && (ogpLoading || (ogp && (ogp.title || ogp.image))));
     if (section === "media") return Boolean(imageUrls && imageUrls.length > 0);
+    if (section === "body") return Boolean(post.body.trim()) || (!post.url && !(imageUrls && imageUrls.length > 0));
     return true;
   };
   const visibleSectionOrder = resolvedSectionOrder.filter(hasSectionContent);

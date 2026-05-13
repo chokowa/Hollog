@@ -81,14 +81,17 @@ export function ComposerModal({
   if (!isOpen && !isClosing) return null;
 
   return (
-    <div className={`composer-modal-layer fixed inset-0 z-50 flex items-start justify-center bg-black/65 p-2 ${isClosing ? "composer-backdrop-out" : "composer-backdrop-in"}`}>
+    <div className={`composer-modal-layer fixed inset-0 z-50 flex items-end justify-center bg-black/65 px-2 pt-6 ${isClosing ? "composer-backdrop-out" : "composer-backdrop-in"}`}>
       <div
         className="absolute inset-0"
         onClick={requestClose}
       />
 
-      <div className={`relative mt-2 w-full max-w-md overflow-hidden rounded-[28px] bg-card shadow-2xl ${isClosing ? "composer-sheet-out" : "composer-sheet-in"}`}>
-        <div className="max-h-[calc(100vh-1rem)] overflow-y-auto overscroll-contain screen-scroll">
+      <div className={`relative w-full max-w-md overflow-hidden rounded-t-[28px] border border-border/70 bg-card shadow-2xl ${isClosing ? "composer-sheet-out" : "composer-sheet-in"}`}>
+        <div className="flex justify-center border-b border-border/70 bg-card pt-2">
+          <div className="mb-2 h-1 w-11 rounded-full bg-muted-foreground/35" aria-hidden="true" />
+        </div>
+        <div className="max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain screen-scroll">
           <PostComposer
             title={title}
             submitLabel={submitLabel}

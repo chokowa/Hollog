@@ -461,6 +461,15 @@ export function CalendarView({
             {calendarDays.map((date) => {
               const dateKey = toDateKey(date.toISOString());
               const dayPosts = postsByDate.get(dateKey) ?? [];
+              const dayIndicators = [
+                { key: "post", visible: dayPosts.some((post) => matchesFilter(post, "post")), className: "bg-primary" },
+                { key: "clip", visible: dayPosts.some((post) => matchesFilter(post, "clip")), className: "bg-emerald-400" },
+                { key: "media", visible: dayPosts.some((post) => (
+                  Boolean(post.imageBlob)
+                  || Boolean(post.imageBlobs?.length)
+                  || Boolean(post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image"))
+                )), className: "bg-orange-400" },
+              ].filter((indicator) => indicator.visible);
               const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
               const isSelected = dateKey === selectedDateKey;
               const isToday = dateKey === todayKey;
@@ -485,13 +494,15 @@ export function CalendarView({
                   <span className={isToday && !isSelected ? "font-bold text-primary" : "font-medium"}>
                     {date.getDate()}
                   </span>
-                  {dayPosts.length > 0 && (
-                    <span
-                      className={`mt-1 h-1.5 w-1.5 rounded-full ${
-                        isSelected ? "bg-primary-foreground" : "bg-primary"
-                      }`}
-                      aria-label={`${dayPosts.length}件の投稿`}
-                    />
+                  {dayIndicators.length > 0 && (
+                    <span className="mt-1 flex h-1.5 items-center justify-center gap-0.5" aria-label={`${dayPosts.length}件の投稿`}>
+                      {dayIndicators.slice(0, 3).map((indicator) => (
+                        <span
+                          key={indicator.key}
+                          className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-primary-foreground" : indicator.className}`}
+                        />
+                      ))}
+                    </span>
                   )}
                 </button>
               );
@@ -534,21 +545,11 @@ export function CalendarView({
                   <article
                     key={post.id}
                     onClick={() => onPostClick(post.id)}
-                    className="grid cursor-pointer grid-cols-[42px_44px_minmax(0,1fr)_28px] items-center gap-2 rounded-2xl border border-border bg-card px-2.5 py-2 shadow-sm transition hover:border-muted-foreground/30 active:scale-[0.997]"
+                    className="grid cursor-pointer grid-cols-[42px_minmax(0,1fr)_52px_28px] items-center gap-2.5 rounded-[20px] border border-border bg-card px-2.5 py-2.5 shadow-sm transition hover:border-muted-foreground/30 active:scale-[0.997]"
                   >
                     <div className="text-center font-medium text-muted-foreground" style={{ fontSize: 12, lineHeight: "16px" }}>
                       {formatTime(post.updatedAt)}
                     </div>
-                    {imageUrl ? (
-                      <div className="h-11 w-11 overflow-hidden rounded-lg bg-black/5">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={imageUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                      </div>
-                    ) : (
-                      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <ImageIcon size={16} />
-                      </div>
-                    )}
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1.5">
                         <span className="shrink-0 rounded-full bg-secondary px-2 py-[1px] font-medium text-muted-foreground" style={compactMetaTextStyle}>
@@ -564,6 +565,16 @@ export function CalendarView({
                         {post.body || "本文なし"}
                       </p>
                     </div>
+                    {imageUrl ? (
+                      <div className="h-[52px] w-[52px] overflow-hidden rounded-xl bg-black/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={imageUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                        <ImageIcon size={16} />
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={(event) => {

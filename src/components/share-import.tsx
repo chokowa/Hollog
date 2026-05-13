@@ -309,8 +309,12 @@ export function ShareImport({
   };
 
   return (
-    <div className="min-h-screen bg-secondary">
-      <header className="sticky top-0 z-10 border-b border-border bg-card px-4 py-3 shadow-sm">
+    <div className="min-h-screen bg-secondary px-2 pt-3">
+      <div className="mx-auto min-h-screen max-w-md overflow-hidden rounded-t-[28px] border border-border/70 bg-card shadow-2xl">
+      <div className="flex justify-center border-b border-border/70 bg-card pt-2">
+        <div className="mb-2 h-1 w-11 rounded-full bg-muted-foreground/35" aria-hidden="true" />
+      </div>
+      <header className="sticky top-0 z-10 border-b border-border bg-card px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -327,7 +331,7 @@ export function ShareImport({
             type="button"
             onClick={handleSave}
             disabled={isSaving || (!url.trim() && !memo.trim() && !hasImages)}
-            className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+            className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
             {isSaving ? "保存中..." : "保存"}
           </button>
@@ -335,7 +339,7 @@ export function ShareImport({
       </header>
 
       <div className="space-y-4 px-4 py-5">
-        <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <section className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
           <label className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <Link2 size={15} />
             URL
@@ -357,7 +361,7 @@ export function ShareImport({
             <button
               type="button"
               onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
-              className="mt-3 w-full overflow-hidden rounded-xl border border-border bg-muted/30 text-left shadow-sm transition-colors hover:bg-muted/50"
+              className="mt-3 w-full overflow-hidden rounded-[20px] border border-border bg-muted/30 text-left shadow-sm transition-colors hover:bg-muted/50"
             >
               {ogp.image && (
                 <div className="aspect-video w-full overflow-hidden bg-black/5">
@@ -384,7 +388,7 @@ export function ShareImport({
           )}
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <section className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
           {imagePreviewItems.length > 0 && (
             <div className="mb-3 grid grid-cols-2 gap-2">
               {imagePreviewItems.map((item) => (
@@ -442,18 +446,19 @@ export function ShareImport({
             rows={4}
           />
           {(onNativeImagesSelect || onNativeClipboardImagesSelect) && (
-            <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-              <div className="flex items-center gap-1">
+            <div className="mt-3 flex items-end justify-between gap-3 border-t border-border pt-3">
+              <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
                 {onNativeImagesSelect && (
                   <button
                     type="button"
                     onClick={onNativeImagesSelect}
                     disabled={imagePreviewItems.length >= 4}
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                    className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-card px-2 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                     title="画像を追加"
                     aria-label="画像を追加"
                   >
                     <ImagePlus size={18} />
+                    <span className="text-[11px] font-medium">画像</span>
                   </button>
                 )}
                 {onNativeClipboardImagesSelect && (
@@ -461,11 +466,12 @@ export function ShareImport({
                     type="button"
                     onClick={onNativeClipboardImagesSelect}
                     disabled={imagePreviewItems.length >= 4}
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+                    className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-card px-2 text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                     title="コピーした画像を貼り付け"
                     aria-label="コピーした画像を貼り付け"
                   >
                     <Clipboard size={18} />
+                    <span className="text-[11px] font-medium">貼付</span>
                   </button>
                 )}
               </div>
@@ -474,7 +480,7 @@ export function ShareImport({
           )}
         </section>
 
-        <section className="relative rounded-lg border border-border bg-card px-3 py-2 shadow-sm transition-colors focus-within:border-muted-foreground">
+        <section className="relative rounded-[20px] border border-border bg-card px-3 py-2.5 shadow-sm transition-colors focus-within:border-muted-foreground">
           <div className="flex flex-wrap items-center gap-1.5">
             <Tags size={16} className="shrink-0 text-muted-foreground" />
             {tags.map((tag) => (
@@ -574,7 +580,8 @@ export function ShareImport({
           )}
         </section>
 
-        <section>
+        <section className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">保存先</p>
           <div className="relative grid grid-cols-2 rounded-full border border-border bg-muted p-1 shadow-inner">
             <div
               className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-card shadow-sm transition-transform duration-200 ${
@@ -603,6 +610,7 @@ export function ShareImport({
           })}
           </div>
         </section>
+      </div>
       </div>
     </div>
   );
