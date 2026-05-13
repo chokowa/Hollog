@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { buildHollogBackupFilename, createHollogBackup, parseHollogBackup, stringifyHollogBackup, type HollogBackupSettings } from "@/lib/hollog-backup";
 import { readHiddenTags, writeHiddenTags } from "@/lib/hidden-tags";
-import { buildDefaultMediaOrder, moveMediaOrderItem, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
+import { buildDefaultMediaOrder, combinePostData, moveMediaOrderItem, normalizeImageBlobIds, normalizeMediaOrder, splitPostData } from "@/lib/post-media";
 import { buildNextOgpFetchState, canAutoRetryOgp, isOgpIncomplete, mergeOgpPreview, resetOgpFetchState } from "@/lib/post-ogp";
 import { readPostCardSectionOrder, writePostCardSectionOrder } from "@/lib/post-card-layout";
 import { samplePosts } from "@/lib/sample-posts";
@@ -526,6 +526,86 @@ export async function runAppSimulation(): Promise<SimulationResult> {
     });
     assert.equal(created.type, "clip");
     assert.equal(created.mediaOrder?.[0].source, "mediaRef");
+  });
+
+  await scenario("post metadata and media split round trip", () => {
+    const imageBlob = createSampleBlob("legacy");
+    const firstBlob = createSampleBlob("first");
+    const secondBlob = createSampleBlob("second");
+    const thumbnailBlobs = [createSampleBlob("thumb-1"), createSampleBlob("thumb-2")];
+    const mediaRefs = [
+      createMediaRef("ref-a", "file:///ref-a.jpg"),
+      createMediaRef("ref-b", "content://media/ref-b.jpg"),
+    ];
+    const post: Post = {
+      id: "split-post",
+      type: "posted",
+      postedFrom: "clip",
+      body: "body with media",
+      url: "https://example.com/split",
+      ogp: {
+        title: "Split title",
+        description: "Split description",
+        image: "https://example.com/ogp.jpg",
+        siteName: "Example",
+      },
+      ogpFetch: {
+        attemptCount: 2,
+        lastAttemptAt: "2026-05-13T01:00:00.000Z",
+        nextRetryAt: null,
+        status: "complete",
+      },
+      imageBlob,
+      imageBlobs: [firstBlob, secondBlob],
+      imageBlobIds: ["blob-1", "blob-2"],
+      thumbnailBlobs,
+      mediaRefs,
+      mediaOrder: [
+        { source: "mediaRef", id: "ref-b" },
+        { source: "imageBlob", id: "blob-2" },
+        { source: "mediaRef", id: "ref-a" },
+        { source: "imageBlob", id: "blob-1" },
+      ],
+      tags: ["tag-a", "tag-b"],
+      source: "share",
+      createdAt: "2026-05-13T00:00:00.000Z",
+      updatedAt: "2026-05-13T02:00:00.000Z",
+      trashedAt: "2026-05-13T03:00:00.000Z",
+    };
+
+    const split = splitPostData(post);
+    assert.equal("imageBlobs" in split.metadata, false);
+    assert.equal("thumbnailBlobs" in split.metadata, false);
+    assert.equal(split.metadata.url, post.url);
+    assert.deepEqual(split.metadata.ogp, post.ogp);
+    assert.deepEqual(split.metadata.tags, post.tags);
+    assert.equal(split.metadata.createdAt, post.createdAt);
+    assert.equal(split.metadata.updatedAt, post.updatedAt);
+    assert.equal(split.media.imageBlob, imageBlob);
+    assert.deepEqual(split.media.imageBlobs, post.imageBlobs);
+    assert.deepEqual(split.media.imageBlobIds, post.imageBlobIds);
+    assert.deepEqual(split.media.thumbnailBlobs, thumbnailBlobs);
+    assert.deepEqual(split.media.mediaRefs, mediaRefs);
+    assert.deepEqual(split.media.mediaOrder, post.mediaOrder);
+    assert.deepEqual(combinePostData(split), post);
+
+    const textOnlyPost: Post = {
+      id: "split-text-only-post",
+      type: "post",
+      body: "text only",
+      tags: ["note"],
+      source: "manual",
+      createdAt: "2026-05-13T04:00:00.000Z",
+      updatedAt: "2026-05-13T04:10:00.000Z",
+    };
+    const restoredTextOnlyPost = combinePostData(splitPostData(textOnlyPost));
+    assert.deepEqual(restoredTextOnlyPost, textOnlyPost);
+    assert.equal("imageBlob" in restoredTextOnlyPost, false);
+    assert.equal("imageBlobs" in restoredTextOnlyPost, false);
+    assert.equal("imageBlobIds" in restoredTextOnlyPost, false);
+    assert.equal("thumbnailBlobs" in restoredTextOnlyPost, false);
+    assert.equal("mediaRefs" in restoredTextOnlyPost, false);
+    assert.equal("mediaOrder" in restoredTextOnlyPost, false);
   });
 
   await scenario("posted transitions and trash lifecycle", () => {

@@ -55,4 +55,16 @@ export type Post = {
   trashedAt?: string;
 };
 
+export type PostMediaBundle = Pick<
+  Post,
+  "imageBlob" | "imageBlobs" | "imageBlobIds" | "thumbnailBlobs" | "mediaRefs" | "mediaOrder"
+>;
+
+export type PostMetadata = Omit<Post, keyof PostMediaBundle>;
+
+export type SplitPostData = {
+  metadata: PostMetadata;
+  media: PostMediaBundle;
+};
+
 export type PostRecordInput = Omit<Post, "id" | "createdAt" | "updatedAt">;

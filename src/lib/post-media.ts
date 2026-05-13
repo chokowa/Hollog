@@ -1,10 +1,14 @@
-import type { PostMediaOrderItem, PostMediaRef } from "@/types/post";
+import type { Post, PostMediaOrderItem, PostMediaRef, SplitPostData } from "@/types/post";
 
 type MediaOrderInput = {
   imageBlobs?: Blob[];
   imageBlobIds?: string[];
   mediaRefs?: PostMediaRef[];
   mediaOrder?: PostMediaOrderItem[];
+};
+
+type DefinedPostMediaBundle = {
+  [Key in keyof SplitPostData["media"]]?: Exclude<SplitPostData["media"][Key], undefined>;
 };
 
 export function createImageBlobId() {
@@ -95,4 +99,41 @@ export function moveMediaOrderItem(
   const [movedItem] = nextOrder.splice(fromIndex, 1);
   nextOrder.splice(toIndex, 0, movedItem);
   return nextOrder;
+}
+
+export function splitPostData(post: Post): SplitPostData {
+  const {
+    imageBlob,
+    imageBlobs,
+    imageBlobIds,
+    thumbnailBlobs,
+    mediaRefs,
+    mediaOrder,
+    ...metadata
+  } = post;
+
+  return {
+    metadata,
+    media: {
+      imageBlob,
+      imageBlobs,
+      imageBlobIds,
+      thumbnailBlobs,
+      mediaRefs,
+      mediaOrder,
+    },
+  };
+}
+
+export function combinePostData({ metadata, media }: SplitPostData): Post {
+  return {
+    ...metadata,
+    ...omitUndefinedMedia(media),
+  };
+}
+
+function omitUndefinedMedia(media: SplitPostData["media"]): DefinedPostMediaBundle {
+  return Object.fromEntries(
+    Object.entries(media).filter(([, value]) => value !== undefined),
+  ) as DefinedPostMediaBundle;
 }
