@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, RotateCcw, Trash2, ZoomIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock3, Info, RotateCcw, ShieldCheck, Trash2, ZoomIn } from "lucide-react";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { PostCard } from "@/components/ui/post-card";
 import { TagContextMenu, type TagContextAction } from "@/components/ui/tag-context-menu";
@@ -135,12 +135,13 @@ function formatTimelineDate(iso: string) {
   }
 }
 
-function groupPostsByUpdatedDate(posts: Post[]): TimelinePostGroup[] {
+function groupPostsByDate(posts: Post[], getDate: (post: Post) => string): TimelinePostGroup[] {
   const groups: TimelinePostGroup[] = [];
   const groupMap = new Map<string, TimelinePostGroup>();
 
   posts.forEach((post) => {
-    const dateKey = getPostDateKey(post.updatedAt);
+    const groupDate = getDate(post);
+    const dateKey = getPostDateKey(groupDate);
     const existingGroup = groupMap.get(dateKey);
 
     if (existingGroup) {
@@ -150,7 +151,7 @@ function groupPostsByUpdatedDate(posts: Post[]): TimelinePostGroup[] {
 
     const nextGroup = {
       dateKey,
-      label: formatTimelineDate(post.updatedAt),
+      label: formatTimelineDate(groupDate),
       posts: [post],
     };
     groupMap.set(dateKey, nextGroup);
@@ -158,6 +159,21 @@ function groupPostsByUpdatedDate(posts: Post[]): TimelinePostGroup[] {
   });
 
   return groups;
+}
+
+function formatTrashMovedAt(post: Post) {
+  if (!post.trashedAt) return "移動日時は未記録";
+
+  try {
+    return `${new Intl.DateTimeFormat("ja-JP", {
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(post.trashedAt))}に移動`;
+  } catch {
+    return "ゴミ箱へ移動済み";
+  }
 }
 
 type SwipeablePostCardProps = {
@@ -489,8 +505,8 @@ export function PostFeed({
     [posts, visibleItemCount],
   );
   const groupedVisiblePosts = useMemo(
-    () => groupPostsByUpdatedDate(visiblePosts),
-    [visiblePosts],
+    () => groupPostsByDate(visiblePosts, (post) => activeTab === "trash" ? post.trashedAt ?? post.updatedAt : post.updatedAt),
+    [activeTab, visiblePosts],
   );
   const visibleMediaItems = useMemo(
     () => mediaItems.slice(0, visibleItemCount),
@@ -799,30 +815,48 @@ export function PostFeed({
             </div>
           )}
           {activeTab === "trash" && (
-            <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">ゴミ箱</p>
-                <p className="text-xs text-muted-foreground">{posts.length}件の投稿</p>
+            <div className="mt-3 overflow-hidden rounded-[24px] border border-border bg-card shadow-[0_12px_40px_rgba(0,0,0,0.05)] dark:bg-card/92">
+              <div className="flex items-start gap-3 border-b border-border/70 px-4 py-3">
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <Trash2 size={19} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground">ゴミ箱</p>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {posts.length}件
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    ここでは投稿を復元できます。完全削除するまで、他の画面には表示されません。
+                  </p>
+                </div>
               </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                <button
-                  type="button"
-                  onClick={restoreAllTrash}
-                  disabled={posts.length === 0}
-                  className="inline-flex h-9 items-center gap-1 rounded-full border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-40"
-                >
-                  <RotateCcw size={14} />
-                  すべて戻す
-                </button>
-                <button
-                  type="button"
-                  onClick={emptyTrash}
-                  disabled={posts.length === 0}
-                  className="inline-flex h-9 items-center gap-1 rounded-full bg-red-500 px-3 text-xs font-semibold text-white transition hover:bg-red-600 disabled:opacity-40"
-                >
-                  <Trash2 size={14} />
-                  ゴミ箱を空にする
-                </button>
+              <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <ShieldCheck size={14} />
+                  完全削除は確認後に実行されます
+                </p>
+                <div className="flex shrink-0 justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={restoreAllTrash}
+                    disabled={posts.length === 0}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  >
+                    <RotateCcw size={14} />
+                    すべて戻す
+                  </button>
+                  <button
+                    type="button"
+                    onClick={emptyTrash}
+                    disabled={posts.length === 0}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 text-xs font-semibold text-red-500 transition hover:bg-red-500 hover:text-white disabled:opacity-40"
+                  >
+                    <Trash2 size={14} />
+                    空にする
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -833,8 +867,18 @@ export function PostFeed({
         {isBooting ? (
           <TimelineBootSkeleton />
         ) : posts.length === 0 ? (
-          <div className="rounded-[24px] border border-[var(--border)] bg-card p-10 text-center text-sm text-[var(--muted)]">
-            {activeTab === "trash" ? "ゴミ箱は空です。" : "まだ投稿がありません。"}
+          <div className="rounded-[24px] border border-[var(--border)] bg-card p-10 text-center text-sm text-muted-foreground">
+            {activeTab === "trash" ? (
+              <div className="mx-auto flex max-w-[18rem] flex-col items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <Trash2 size={22} />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">ゴミ箱は空です</p>
+                  <p className="mt-1 text-xs leading-relaxed">削除した投稿はここに集まり、必要なら戻せます。</p>
+                </div>
+              </div>
+            ) : "まだ投稿がありません。"}
           </div>
         ) : activeTab === "media" ? (
           <div key={listAnimationKey} className="columns-2 gap-2 space-y-2 sm:columns-3">
@@ -964,16 +1008,28 @@ export function PostFeed({
                         className="timeline-card-shell"
                       >
                         {activeTab === "trash" ? (
-                          <div className="flex flex-col gap-2">
+                          <div className="overflow-hidden rounded-[30px] border border-border/80 bg-card shadow-[0_1px_0_rgba(255,255,255,0.03)]">
+                            <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/25 px-4 py-2 text-xs text-muted-foreground">
+                              <span className="inline-flex min-w-0 items-center gap-1.5">
+                                <Clock3 size={13} />
+                                <span className="truncate">{formatTrashMovedAt(post)}</span>
+                              </span>
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-background px-2 py-1 text-[11px] font-medium">
+                                <Info size={12} />
+                                非表示
+                              </span>
+                            </div>
                             {card}
-                            <button
-                              type="button"
-                              onClick={() => void onPostRestore(post.id)}
-                              className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium text-muted-foreground shadow-sm transition hover:bg-muted hover:text-foreground"
-                            >
-                              <RotateCcw size={14} />
-                              元に戻す
-                            </button>
+                            <div className="flex justify-end border-t border-border/70 bg-muted/20 px-4 py-2">
+                              <button
+                                type="button"
+                                onClick={() => void onPostRestore(post.id)}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-semibold text-foreground shadow-sm transition hover:bg-muted active:scale-95"
+                              >
+                                <RotateCcw size={14} />
+                                元に戻す
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
