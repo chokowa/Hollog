@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PostComposer, type InlineImageSource, type PostFormValue } from "@/components/ui/post-composer";
 
+const COMPOSER_CLOSE_REQUEST_EVENT = "bocchi:composer-close-request";
+
 type ComposerModalProps = {
   isOpen: boolean;
   onClose: () => void;
@@ -47,10 +49,18 @@ export function ComposerModal({
     setIsClosing(true);
     closeTimerRef.current = window.setTimeout(() => {
       closeTimerRef.current = null;
-      setIsClosing(false);
       onClose();
     }, 160);
   }, [isClosing, onClose]);
+
+  useEffect(() => {
+    if (isOpen || !isClosing) return;
+
+    const unmountTimer = window.setTimeout(() => {
+      setIsClosing(false);
+    }, 40);
+    return () => window.clearTimeout(unmountTimer);
+  }, [isClosing, isOpen]);
 
   useEffect(() => {
     return () => {
@@ -63,39 +73,22 @@ export function ComposerModal({
   useEffect(() => {
     if (!isOpen) return;
 
-    const scrollY = window.scrollY;
-    const originalStyles = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-      overflow: document.body.style.overflow,
-    };
-
-    document.body.style.position = "fixed";
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = "100%";
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.position = originalStyles.position;
-      document.body.style.top = originalStyles.top;
-      document.body.style.width = originalStyles.width;
-      document.body.style.overflow = originalStyles.overflow;
-      window.scrollTo(0, scrollY);
-    };
-  }, [isOpen]);
+    const handleCloseRequest = () => requestClose();
+    window.addEventListener(COMPOSER_CLOSE_REQUEST_EVENT, handleCloseRequest);
+    return () => window.removeEventListener(COMPOSER_CLOSE_REQUEST_EVENT, handleCloseRequest);
+  }, [isOpen, requestClose]);
 
   if (!isOpen && !isClosing) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-2 backdrop-blur-[3px] ${isClosing ? "composer-backdrop-out" : "composer-backdrop-in"}`}>
+    <div className={`composer-modal-layer fixed inset-0 z-50 flex items-start justify-center bg-black/65 p-2 ${isClosing ? "composer-backdrop-out" : "composer-backdrop-in"}`}>
       <div
         className="absolute inset-0"
         onClick={requestClose}
       />
 
       <div className={`relative mt-2 w-full max-w-md overflow-hidden rounded-[28px] bg-card shadow-2xl ${isClosing ? "composer-sheet-out" : "composer-sheet-in"}`}>
-        <div className="max-h-[calc(100vh-1rem)] overflow-y-auto screen-scroll">
+        <div className="max-h-[calc(100vh-1rem)] overflow-y-auto overscroll-contain screen-scroll">
           <PostComposer
             title={title}
             submitLabel={submitLabel}

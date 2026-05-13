@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Trash2, ZoomIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, Trash2, ZoomIn } from "lucide-react";
 import { ImageViewer } from "@/components/ui/image-viewer";
 import { PostCard } from "@/components/ui/post-card";
 import { TagContextMenu, type TagContextAction } from "@/components/ui/tag-context-menu";
@@ -31,6 +31,9 @@ type PostFeedProps = {
   onPostOgpFetched: (post: Post, ogp: Post["ogp"] | null) => void;
   onPostOgpRetry: (post: Post) => void;
   onPostDelete: (postId: string) => Promise<boolean>;
+  onPostRestore: (postId: string) => Promise<boolean>;
+  onRestoreAllTrash: () => Promise<number>;
+  onEmptyTrash: () => Promise<number>;
   imageViewerRoute: ImageViewerRoute | null;
   imageViewerOriginRect: ImageOriginRect | null;
   onImageViewerOpen: (route: ImageViewerRoute, originRect?: ImageOriginRect | null) => void;
@@ -46,6 +49,7 @@ const timelineTabs: Array<{ label: string; value: TimelineFilter }> = [
   { label: "クリップ", value: "clip" },
   { label: "投稿済み", value: "posted" },
   { label: "メディア", value: "media" },
+  { label: "ゴミ箱", value: "trash" },
 ];
 
 const INITIAL_VISIBLE_ITEMS = 18;
@@ -67,6 +71,39 @@ type TimelinePostGroup = {
 const SWIPE_DELETE_THRESHOLD = 96;
 const SWIPE_MAX_OFFSET = -140;
 const SWIPE_VERTICAL_LOCK = 10;
+const SWIPE_DRAG_RESISTANCE = 0.68;
+const TAG_SCROLL_GAP_HIT_SLOP = 8;
+
+function TimelineBootSkeleton() {
+  return (
+    <div className="relative flex flex-col gap-5 pl-4 sm:pl-5" aria-hidden="true">
+      <div className="pointer-events-none absolute bottom-0 left-[5px] top-3 w-px bg-border" />
+      {[0, 1, 2].map((groupIndex) => (
+        <section key={groupIndex} className="timeline-date-section relative">
+          <div className="mb-2.5 flex items-center gap-3">
+            <span className="absolute left-[-15px] top-[7px] z-10 h-3 w-3 rounded-full border-2 border-background bg-muted-foreground/35 shadow-[0_0_0_1px_var(--border)]" />
+            <div className="h-4 w-24 rounded-full bg-muted" />
+            <div className="ml-auto h-6 w-14 rounded-full border border-border bg-card" />
+          </div>
+          <div className="flex flex-col gap-3">
+            {[0, 1].map((itemIndex) => (
+              <div key={itemIndex} className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="h-7 w-7 rounded-full bg-muted" />
+                  <div className="h-3 w-28 rounded-full bg-muted" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-full rounded-full bg-muted" />
+                  <div className="h-3 w-4/5 rounded-full bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 function getPostDateKey(iso: string) {
   const date = new Date(iso);
@@ -129,9 +166,34 @@ type SwipeablePostCardProps = {
   onDelete: (post: Post) => void;
 };
 
+function isInsideFilledHorizontalScrollArea(target: HTMLElement, clientX: number) {
+  const horizontalScrollElement = target.closest<HTMLElement>("[data-horizontal-scroll]");
+  if (!horizontalScrollElement) return false;
+
+  const scrollItems = Array.from(horizontalScrollElement.querySelectorAll<HTMLElement>("[data-horizontal-scroll-item]"));
+  if (scrollItems.length === 0) return true;
+
+  const firstRect = scrollItems[0].getBoundingClientRect();
+  const lastRect = scrollItems[scrollItems.length - 1].getBoundingClientRect();
+  return clientX >= firstRect.left - TAG_SCROLL_GAP_HIT_SLOP && clientX <= lastRect.right + TAG_SCROLL_GAP_HIT_SLOP;
+}
+
+function canStartPostSwipe(target: HTMLElement, clientX: number) {
+  return !(
+    isInsideFilledHorizontalScrollArea(target, clientX)
+    || target.closest("[data-horizontal-scroll] button, [data-horizontal-scroll] a, button:not([data-swipe-start]), a, input, textarea, select")
+    || target.closest("[data-card-media], img")
+  );
+}
+
+function getSwipeOffset(deltaX: number) {
+  return Math.max(SWIPE_MAX_OFFSET, Math.min(0, deltaX * SWIPE_DRAG_RESISTANCE));
+}
+
 function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCardProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const offsetXRef = useRef(0);
   const suppressNextClickRef = useRef(false);
   const startedOnMediaRef = useRef(false);
   const dragStateRef = useRef<{
@@ -140,14 +202,35 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     startY: number;
     lockedAxis: "x" | "y" | null;
     moved: boolean;
+    captured: boolean;
   } | null>(null);
+  const touchDragStateRef = useRef<{
+    touchId: number;
+    startX: number;
+    startY: number;
+    lockedAxis: "x" | "y" | null;
+    moved: boolean;
+  } | null>(null);
+
+  const updateOffsetX = (nextOffsetX: number) => {
+    offsetXRef.current = nextOffsetX;
+    setOffsetX(nextOffsetX);
+  };
+
+  const resetSwipe = () => {
+    dragStateRef.current = null;
+    touchDragStateRef.current = null;
+    setIsDragging(false);
+    startedOnMediaRef.current = false;
+    updateOffsetX(0);
+  };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (document.documentElement.dataset.imageViewer === "open") return;
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     startedOnMediaRef.current = Boolean(target.closest("[data-card-media], img"));
-    if (target.closest("button:not([data-swipe-start]), a, input, textarea, select") || startedOnMediaRef.current) return;
+    if (!canStartPostSwipe(target, event.clientX)) return;
 
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -155,16 +238,14 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
       startY: event.clientY,
       lockedAxis: null,
       moved: false,
+      captured: false,
     };
     setIsDragging(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (document.documentElement.dataset.imageViewer === "open") {
-      dragStateRef.current = null;
-      setIsDragging(false);
-      setOffsetX(0);
+      resetSwipe();
       return;
     }
 
@@ -183,17 +264,21 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     }
 
     if (dragState.lockedAxis !== "x") return;
+
+    if (!dragState.captured) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragState.captured = true;
+    }
+
     event.preventDefault();
     dragState.moved = true;
     suppressNextClickRef.current = true;
-    setOffsetX(Math.max(SWIPE_MAX_OFFSET, Math.min(0, deltaX)));
+    updateOffsetX(getSwipeOffset(deltaX));
   };
 
   const finishSwipe = (event: React.PointerEvent<HTMLDivElement>) => {
     if (document.documentElement.dataset.imageViewer === "open") {
-      dragStateRef.current = null;
-      setIsDragging(false);
-      setOffsetX(0);
+      resetSwipe();
       return;
     }
 
@@ -204,14 +289,81 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     setIsDragging(false);
     startedOnMediaRef.current = false;
 
-    if (offsetX <= -SWIPE_DELETE_THRESHOLD) {
+    if (offsetXRef.current <= -SWIPE_DELETE_THRESHOLD) {
       suppressNextClickRef.current = true;
-      setOffsetX(SWIPE_MAX_OFFSET);
+      updateOffsetX(SWIPE_MAX_OFFSET);
       window.setTimeout(() => onDelete(post), 140);
       return;
     }
 
-    setOffsetX(0);
+    updateOffsetX(0);
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (document.documentElement.dataset.imageViewer === "open") return;
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const target = event.target as HTMLElement;
+    startedOnMediaRef.current = Boolean(target.closest("[data-card-media], img"));
+    if (!canStartPostSwipe(target, touch.clientX)) return;
+
+    touchDragStateRef.current = {
+      touchId: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lockedAxis: null,
+      moved: false,
+    };
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (document.documentElement.dataset.imageViewer === "open") {
+      resetSwipe();
+      return;
+    }
+
+    const dragState = touchDragStateRef.current;
+    if (!dragState) return;
+
+    const touch = Array.from(event.touches).find((item) => item.identifier === dragState.touchId);
+    if (!touch) return;
+
+    const deltaX = touch.clientX - dragState.startX;
+    const deltaY = touch.clientY - dragState.startY;
+
+    if (!dragState.lockedAxis) {
+      if (Math.abs(deltaY) > SWIPE_VERTICAL_LOCK && Math.abs(deltaY) > Math.abs(deltaX)) {
+        dragState.lockedAxis = "y";
+      } else if (Math.abs(deltaX) > SWIPE_VERTICAL_LOCK && Math.abs(deltaX) > Math.abs(deltaY)) {
+        dragState.lockedAxis = "x";
+      }
+    }
+
+    if (dragState.lockedAxis !== "x") return;
+
+    event.preventDefault();
+    dragState.moved = true;
+    suppressNextClickRef.current = true;
+    updateOffsetX(getSwipeOffset(deltaX));
+  };
+
+  const finishTouchSwipe = () => {
+    const dragState = touchDragStateRef.current;
+    if (!dragState) return;
+
+    touchDragStateRef.current = null;
+    setIsDragging(false);
+    startedOnMediaRef.current = false;
+
+    if (offsetXRef.current <= -SWIPE_DELETE_THRESHOLD) {
+      suppressNextClickRef.current = true;
+      updateOffsetX(SWIPE_MAX_OFFSET);
+      window.setTimeout(() => onDelete(post), 140);
+      return;
+    }
+
+    updateOffsetX(0);
   };
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -226,7 +378,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
       suppressNextClickRef.current = false;
       event.preventDefault();
       event.stopPropagation();
-      setOffsetX(0);
+      updateOffsetX(0);
       return;
     }
 
@@ -239,7 +391,7 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
     suppressNextClickRef.current = false;
     event.preventDefault();
     event.stopPropagation();
-    setOffsetX(0);
+    updateOffsetX(0);
   };
 
   return (
@@ -256,6 +408,10 @@ function SwipeablePostCard({ post, children, onOpen, onDelete }: SwipeablePostCa
         onPointerMove={handlePointerMove}
         onPointerUp={finishSwipe}
         onPointerCancel={finishSwipe}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={finishTouchSwipe}
+        onTouchCancel={finishTouchSwipe}
         onClickCapture={handleClickCapture}
         onClick={handleClick}
       >
@@ -285,6 +441,9 @@ export function PostFeed({
   onPostOgpFetched,
   onPostOgpRetry,
   onPostDelete,
+  onPostRestore,
+  onRestoreAllTrash,
+  onEmptyTrash,
   imageViewerRoute,
   imageViewerOriginRect,
   onImageViewerOpen,
@@ -305,7 +464,7 @@ export function PostFeed({
     key: "",
     count: INITIAL_VISIBLE_ITEMS,
   });
-  const listAnimationKey = `${activeTab}-${activeTag ?? "all"}-${posts.length}`;
+  const listAnimationKey = `${activeTab}-${activeTag ?? "all"}`;
   const visibleItemCount = visibleItemsState.key === listAnimationKey
     ? visibleItemsState.count
     : INITIAL_VISIBLE_ITEMS;
@@ -404,14 +563,12 @@ export function PostFeed({
   };
   const commitPendingDelete = useCallback(async (postId: string) => {
     deleteTimersRef.current.delete(postId);
-    const deleted = await onPostDelete(postId);
-    if (!deleted) {
-      setPendingDeletedPosts((current) => {
-        const next = { ...current };
-        delete next[postId];
-        return next;
-      });
-    }
+    await onPostDelete(postId);
+    setPendingDeletedPosts((current) => {
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
     setLatestPendingDeleteId((current) => (current === postId ? null : current));
   }, [onPostDelete]);
   const requestDeletePost = useCallback((post: Post) => {
@@ -438,6 +595,15 @@ export function PostFeed({
       return next;
     });
     setLatestPendingDeleteId(null);
+  };
+  const restoreAllTrash = async () => {
+    if (timelinePosts.length === 0) return;
+    await onRestoreAllTrash();
+  };
+  const emptyTrash = async () => {
+    if (timelinePosts.length === 0) return;
+    if (!confirm(`${timelinePosts.length}件の投稿を完全に削除します。この操作は元に戻せません。`)) return;
+    await onEmptyTrash();
   };
   const getMediaOriginRect = useCallback((index: number) => {
     const item = visibleMediaItems[index];
@@ -623,20 +789,46 @@ export function PostFeed({
               )}
             </div>
           )}
+          {activeTab === "trash" && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">ゴミ箱</p>
+                <p className="text-xs text-muted-foreground">{timelinePosts.length}件の投稿</p>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={restoreAllTrash}
+                  disabled={timelinePosts.length === 0}
+                  className="inline-flex h-9 items-center gap-1 rounded-full border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-40"
+                >
+                  <RotateCcw size={14} />
+                  すべて戻す
+                </button>
+                <button
+                  type="button"
+                  onClick={emptyTrash}
+                  disabled={timelinePosts.length === 0}
+                  className="inline-flex h-9 items-center gap-1 rounded-full bg-red-500 px-3 text-xs font-semibold text-white transition hover:bg-red-600 disabled:opacity-40"
+                >
+                  <Trash2 size={14} />
+                  ゴミ箱を空にする
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="px-2 sm:px-3">
         {isBooting ? (
-          <div className="flex items-center justify-center py-10 text-sm text-[var(--muted)]">
-            読み込み中...
-          </div>
+          <TimelineBootSkeleton />
         ) : posts.length === 0 ? (
           <div className="rounded-[24px] border border-[var(--border)] bg-card p-10 text-center text-sm text-[var(--muted)]">
-            まだ投稿がありません。
+            {activeTab === "trash" ? "ゴミ箱は空です。" : "まだ投稿がありません。"}
           </div>
         ) : activeTab === "media" ? (
-          <div key={listAnimationKey} className="timeline-list-swap columns-2 gap-2 space-y-2 sm:columns-3">
+          <div key={listAnimationKey} className="columns-2 gap-2 space-y-2 sm:columns-3">
             {visibleMediaItems.map(({ post, url, mediaKey }, itemIndex) => (
               <div
                 key={mediaKey}
@@ -684,7 +876,7 @@ export function PostFeed({
           <div
             key={listAnimationKey}
             ref={postsContainerRef}
-            className="timeline-list-swap relative flex flex-col gap-5 pl-4 sm:pl-5"
+            className="relative flex flex-col gap-5 pl-4 sm:pl-5"
           >
             <div className="pointer-events-none absolute bottom-0 left-[5px] top-3 w-px bg-border" />
             {groupedVisiblePosts.map((group) => (
@@ -706,34 +898,55 @@ export function PostFeed({
                   </span>
                 </div>
                 <div className="flex flex-col gap-3">
-                  {group.posts.map((post) => (
-                    <div
-                      key={post.id}
-                      className="timeline-card-shell"
-                    >
-                      <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
-                          <PostCard
-                          post={post}
-                          imageUrls={postThumbnailUrlMap[post.id]}
-                          onEdit={() => onPostEdit(post)}
-                          onCopy={onPostCopy}
-                          onUrlCopy={onPostUrlCopy}
-                          onSaveMedia={onPostSaveMedia}
-                          onTagClick={handleTagChange}
-                          onTagMenuAction={onTagMenuAction}
-                          isTagHidden={(tag) => Boolean(availableTags.find((item) => item.name === tag)?.hidden)}
-                          hasMediaForTag={hasMediaForTag}
-                          onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
-                          onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
-                          onOgpRetry={onPostOgpRetry}
-                          sectionOrder={postCardSectionOrder}
-                          onImageOpen={(clickedPost, index, originRect) => {
-                            onImageViewerOpen({ kind: "post", postId: clickedPost.id, index }, originRect);
-                          }}
-                        />
-                      </SwipeablePostCard>
-                    </div>
-                  ))}
+                  {group.posts.map((post) => {
+                    const card = (
+                      <PostCard
+                        post={post}
+                        imageUrls={postThumbnailUrlMap[post.id]}
+                        onClick={activeTab === "trash" ? () => onPostClick(post.id) : undefined}
+                        onEdit={() => onPostEdit(post)}
+                        onCopy={onPostCopy}
+                        onUrlCopy={onPostUrlCopy}
+                        onSaveMedia={onPostSaveMedia}
+                        onTagClick={handleTagChange}
+                        onTagMenuAction={onTagMenuAction}
+                        isTagHidden={(tag) => Boolean(availableTags.find((item) => item.name === tag)?.hidden)}
+                        hasMediaForTag={hasMediaForTag}
+                        onTypeChange={(nextType) => onPostTypeChange(post, nextType)}
+                        onOgpFetched={(ogp) => onPostOgpFetched(post, ogp)}
+                        onOgpRetry={onPostOgpRetry}
+                        sectionOrder={postCardSectionOrder}
+                        onImageOpen={(clickedPost, index, originRect) => {
+                          onImageViewerOpen({ kind: "post", postId: clickedPost.id, index }, originRect);
+                        }}
+                      />
+                    );
+
+                    return (
+                      <div
+                        key={post.id}
+                        className="timeline-card-shell"
+                      >
+                        {activeTab === "trash" ? (
+                          <div className="flex flex-col gap-2">
+                            {card}
+                            <button
+                              type="button"
+                              onClick={() => void onPostRestore(post.id)}
+                              className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium text-muted-foreground shadow-sm transition hover:bg-muted hover:text-foreground"
+                            >
+                              <RotateCcw size={14} />
+                              元に戻す
+                            </button>
+                          </div>
+                        ) : (
+                          <SwipeablePostCard post={post} onOpen={() => onPostClick(post.id)} onDelete={requestDeletePost}>
+                            {card}
+                          </SwipeablePostCard>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             ))}
@@ -760,20 +973,24 @@ export function PostFeed({
           onClose={onImageViewerClose}
         />
       )}
-      {latestPendingPost && (
-        <div className="fixed inset-x-0 bottom-6 z-50 mx-auto flex w-full max-w-md justify-center px-4 pointer-events-none">
-          <div className="pointer-events-auto flex w-full items-center justify-between gap-3 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white shadow-xl">
-            <span className="min-w-0 truncate">1件削除しました</span>
-            <button
-              type="button"
-              onClick={undoLatestDelete}
-              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold text-cyan-300 underline underline-offset-4 transition hover:bg-white/10 active:scale-95"
-            >
-              元に戻す
-            </button>
-          </div>
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 mx-auto flex w-full max-w-md transform-gpu justify-center px-4">
+        <div
+          className={`flex w-full transform-gpu items-center justify-between gap-3 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white shadow-lg transition-[opacity,transform] duration-150 ease-out [contain:paint] ${
+            latestPendingPost ? "pointer-events-auto translate-y-0 opacity-100" : "translate-y-1.5 opacity-0"
+          }`}
+          aria-hidden={!latestPendingPost}
+        >
+          <span className="min-w-0 truncate">1件削除しました</span>
+          <button
+            type="button"
+            onClick={undoLatestDelete}
+            disabled={!latestPendingPost}
+            className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold text-cyan-300 underline underline-offset-4 transition hover:bg-white/10 active:scale-95 disabled:pointer-events-none"
+          >
+            元に戻す
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

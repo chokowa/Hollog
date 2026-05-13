@@ -20,6 +20,7 @@ function applyTheme(mode: ThemeMode) {
   } else {
     root.classList.remove("dark");
   }
+  root.style.colorScheme = resolved;
 }
 
 function readInitialTheme(): ThemeMode {

@@ -571,21 +571,29 @@ export function usePosts() {
   }, []);
 
   // フィルタリング
+  const activePosts = useMemo(() => posts.filter((post) => !post.trashedAt), [posts]);
+  const trashedPosts = useMemo(
+    () => posts.filter((post) => post.trashedAt).sort((left, right) => (right.trashedAt ?? "").localeCompare(left.trashedAt ?? "")),
+    [posts],
+  );
+
   const tabBasePosts = useMemo(() => {
+    if (activeTab === "trash") return trashedPosts;
+
     switch (activeTab) {
       case "post":
-        return posts.filter((p) =>
+        return activePosts.filter((p) =>
           p.type === "post" || (!hidePostedInSourceTabs && p.type === "posted" && (!p.postedFrom || p.postedFrom === "post")),
         );
       case "clip":
-        return posts.filter((p) =>
+        return activePosts.filter((p) =>
           p.type === "clip" || (!hidePostedInSourceTabs && p.type === "posted" && (!p.postedFrom || p.postedFrom === "clip")),
         );
-      case "posted": return posts.filter((p) => p.type === "posted");
-      case "media": return posts.filter((p) => getMediaCount(p) > 0);
-      default: return posts;
+      case "posted": return activePosts.filter((p) => p.type === "posted");
+      case "media": return activePosts.filter((p) => getMediaCount(p) > 0);
+      default: return activePosts;
     }
-  }, [posts, activeTab, hidePostedInSourceTabs]);
+  }, [activePosts, activeTab, hidePostedInSourceTabs, trashedPosts]);
 
   const tabFilteredPosts = useMemo(() => {
     if (hiddenTags.length === 0) return tabBasePosts;
@@ -808,10 +816,21 @@ export function usePosts() {
   const deletePost = async (id: string) => {
     setIsBusy(true);
     try {
-      await postsRepository.delete(id);
+      const currentPost = posts.find((post) => post.id === id);
+      if (!currentPost) return false;
+      if (currentPost.trashedAt) return true;
+
+      const updated = await postsRepository.update(
+        id,
+        {
+          trashedAt: new Date().toISOString(),
+          source: currentPost.source,
+        },
+        { touchUpdatedAt: false },
+      );
       postsMutationVersionRef.current += 1;
-      setPosts((prev) => prev.filter((p) => p.id !== id));
-      setStatusMessage("投稿を削除しました。");
+      setPosts((prev) => prev.map((post) => (post.id === id ? updated : post)));
+      setStatusMessage("投稿をゴミ箱に移動しました。");
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete post");
@@ -867,15 +886,96 @@ export function usePosts() {
   const deletePostsByTag = async (tag: string) => {
     setIsBusy(true);
     try {
-      const targetPosts = posts.filter((post) => post.tags.includes(tag));
-      await Promise.all(targetPosts.map((post) => postsRepository.delete(post.id)));
+      const trashedAt = new Date().toISOString();
+      const targetPosts = posts.filter((post) => !post.trashedAt && post.tags.includes(tag));
+      const updatedPosts = await Promise.all(targetPosts.map((post) =>
+        postsRepository.update(
+          post.id,
+          {
+            trashedAt,
+            source: post.source,
+          },
+          { touchUpdatedAt: false },
+        ),
+      ));
       postsMutationVersionRef.current += 1;
-      const deletedIds = new Set(targetPosts.map((post) => post.id));
-      setPosts((prev) => prev.filter((post) => !deletedIds.has(post.id)));
-      setStatusMessage(`${targetPosts.length}件の投稿を削除しました。`);
-      return targetPosts.length;
+      const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
+      setPosts((prev) => prev.map((post) => updatedById.get(post.id) ?? post));
+      setStatusMessage(`${updatedPosts.length}件の投稿をゴミ箱に移動しました。`);
+      return updatedPosts.length;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete tagged posts");
+      return 0;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const restorePost = async (id: string) => {
+    setIsBusy(true);
+    try {
+      const currentPost = posts.find((post) => post.id === id);
+      if (!currentPost) return false;
+
+      const restored = await postsRepository.update(
+        id,
+        {
+          trashedAt: undefined,
+          source: currentPost.source,
+        },
+        { touchUpdatedAt: false },
+      );
+      postsMutationVersionRef.current += 1;
+      setPosts((prev) => prev.map((post) => (post.id === id ? restored : post)));
+      setStatusMessage("投稿を元に戻しました。");
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restore post");
+      return false;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const restoreAllTrashedPosts = async () => {
+    setIsBusy(true);
+    try {
+      const targets = posts.filter((post) => post.trashedAt);
+      const restoredPosts = await Promise.all(targets.map((post) =>
+        postsRepository.update(
+          post.id,
+          {
+            trashedAt: undefined,
+            source: post.source,
+          },
+          { touchUpdatedAt: false },
+        ),
+      ));
+      const restoredById = new Map(restoredPosts.map((post) => [post.id, post]));
+      postsMutationVersionRef.current += 1;
+      setPosts((prev) => prev.map((post) => restoredById.get(post.id) ?? post));
+      setStatusMessage(`${restoredPosts.length}件の投稿を元に戻しました。`);
+      return restoredPosts.length;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restore trashed posts");
+      return 0;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const emptyTrash = async () => {
+    setIsBusy(true);
+    try {
+      const targets = posts.filter((post) => post.trashedAt);
+      await Promise.all(targets.map((post) => postsRepository.delete(post.id)));
+      const deletedIds = new Set(targets.map((post) => post.id));
+      postsMutationVersionRef.current += 1;
+      setPosts((prev) => prev.filter((post) => !deletedIds.has(post.id)));
+      setStatusMessage(`${targets.length}件の投稿を完全に削除しました。`);
+      return targets.length;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to empty trash");
       return 0;
     } finally {
       setIsBusy(false);
@@ -926,6 +1026,8 @@ export function usePosts() {
 
   return {
     posts,
+    activePosts,
+    trashedPosts,
     visiblePosts,
     hidePostedInSourceTabs,
     setHidePostedInSourceTabs,
@@ -955,6 +1057,9 @@ export function usePosts() {
     bulkUpdatePostTags,
     deletePostsByTag,
     deletePost,
+    restorePost,
+    restoreAllTrashedPosts,
+    emptyTrash,
     previewImportPosts,
     importPosts,
     fromPost,

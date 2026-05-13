@@ -20,16 +20,24 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 
 public class MainActivity extends BridgeActivity {
     private boolean initialShareIntentPending = false;
+    private final Handler shareHandler = new Handler(Looper.getMainLooper());
+    private final ArrayList<Runnable> pendingShareDispatches = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(BocchiMediaPlugin.class);
-        initialShareIntentPending = isShareIntent(getIntent());
+        Intent launchIntent = getIntent();
+        initialShareIntentPending = isShareIntent(launchIntent);
         super.onCreate(savedInstanceState);
+        if (initialShareIntentPending) {
+            dispatchShareIntent(launchIntent);
+        }
     }
 
     @Override
@@ -68,6 +76,7 @@ public class MainActivity extends BridgeActivity {
         if (isBlank(text)) {
             text = firstNonBlank(htmlText, clipText);
         }
+        String shareKey = buildShareKey(intent, action, type, text, subject, title, htmlText, sourceUrl, previewImageUrl, clipText);
         JSONArray images = readSharedImages(intent, action, type);
         if (isBlank(text) && isBlank(subject) && isBlank(title) && isBlank(sourceUrl) && isBlank(previewImageUrl) && images.length() == 0) {
             consumeShareIntent(intent);
@@ -77,6 +86,7 @@ public class MainActivity extends BridgeActivity {
 
         JSONObject payload = new JSONObject();
         try {
+            payload.put("shareKey", shareKey);
             payload.put("text", text == null ? "" : text);
             payload.put("subject", subject == null ? "" : subject);
             payload.put("title", title == null ? "" : title);
@@ -89,21 +99,52 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
-        Handler handler = new Handler(Looper.getMainLooper());
         String data = payload.toString();
-        handler.postDelayed(() -> triggerShareEvent(data), 150);
-        handler.postDelayed(() -> triggerShareEvent(data), 750);
-        handler.postDelayed(() -> triggerShareEvent(data), 1600);
-        handler.postDelayed(() -> triggerShareEvent(data), 3200);
+        cancelPendingShareDispatches();
+        scheduleShareEvent(data, 150);
+        scheduleShareEvent(data, 750);
+        scheduleShareEvent(data, 1600);
+        scheduleShareEvent(data, 3200);
         consumeShareIntent(intent);
         initialShareIntentPending = false;
     }
 
     private void consumeShareIntent(Intent intent) {
+        if (intent != null) {
+            intent.setAction(Intent.ACTION_MAIN);
+            intent.setType(null);
+            intent.setData(null);
+            intent.replaceExtras((Bundle) null);
+        }
         Intent mainIntent = new Intent(Intent.ACTION_MAIN);
         mainIntent.setPackage(getPackageName());
         mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
         setIntent(mainIntent);
+    }
+
+    private void scheduleShareEvent(String data, long delayMs) {
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                pendingShareDispatches.remove(this);
+                triggerShareEvent(data);
+            }
+        };
+        pendingShareDispatches.add(runnable);
+        shareHandler.postDelayed(runnable, delayMs);
+    }
+
+    private void cancelPendingShareDispatches() {
+        for (Runnable runnable : pendingShareDispatches) {
+            shareHandler.removeCallbacks(runnable);
+        }
+        pendingShareDispatches.clear();
+    }
+
+    @Override
+    public void onDestroy() {
+        cancelPendingShareDispatches();
+        super.onDestroy();
     }
 
     private boolean isShareIntent(Intent intent) {
@@ -113,6 +154,76 @@ public class MainActivity extends BridgeActivity {
 
         String action = intent.getAction();
         return Intent.ACTION_SEND.equals(action) || Intent.ACTION_SEND_MULTIPLE.equals(action);
+    }
+
+    private String buildShareKey(
+        Intent intent,
+        String action,
+        String type,
+        String text,
+        String subject,
+        String title,
+        String htmlText,
+        String sourceUrl,
+        String previewImageUrl,
+        String clipText
+    ) {
+        StringBuilder builder = new StringBuilder();
+        appendKeyPart(builder, action);
+        appendKeyPart(builder, type);
+        appendKeyPart(builder, text);
+        appendKeyPart(builder, subject);
+        appendKeyPart(builder, title);
+        appendKeyPart(builder, htmlText);
+        appendKeyPart(builder, sourceUrl);
+        appendKeyPart(builder, previewImageUrl);
+        appendKeyPart(builder, clipText);
+
+        if (intent != null && intent.getClipData() != null) {
+            int count = Math.min(intent.getClipData().getItemCount(), 8);
+            for (int index = 0; index < count; index++) {
+                Uri uri = intent.getClipData().getItemAt(index).getUri();
+                appendKeyPart(builder, uri == null ? "" : uri.toString());
+            }
+        }
+
+        if (intent != null) {
+            ArrayList<Uri> streamUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (streamUris != null) {
+                for (int index = 0; index < Math.min(streamUris.size(), 8); index++) {
+                    Uri uri = streamUris.get(index);
+                    appendKeyPart(builder, uri == null ? "" : uri.toString());
+                }
+            } else {
+                Uri streamUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                appendKeyPart(builder, streamUri == null ? "" : streamUri.toString());
+            }
+        }
+
+        return sha256(builder.toString());
+    }
+
+    private void appendKeyPart(StringBuilder builder, String value) {
+        builder.append(value == null ? "" : value);
+        builder.append('\u001f');
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte item : hash) {
+                String part = Integer.toHexString(0xff & item);
+                if (part.length() == 1) {
+                    hex.append('0');
+                }
+                hex.append(part);
+            }
+            return hex.toString();
+        } catch (Exception ignored) {
+            return String.valueOf(value.hashCode());
+        }
     }
 
     private JSONArray readSharedImages(Intent intent, String action, String type) {

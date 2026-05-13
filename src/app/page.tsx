@@ -61,6 +61,7 @@ type AppHistoryState = {
 };
 
 type NativeSharePayload = {
+  shareKey?: string;
   text?: string;
   subject?: string;
   title?: string;
@@ -167,6 +168,10 @@ type PendingShareImport = {
   imageBlobs: Blob[];
   mediaRefs: PostMediaRef[];
 };
+
+const NATIVE_SHARE_DEDUP_WINDOW_MS = 10000;
+const CONSUMED_NATIVE_SHARE_TTL_MS = 10 * 60 * 1000;
+const CONSUMED_NATIVE_SHARE_STORAGE_KEY = "bocchisns_consumed_native_share_keys";
 
 type AppToast = {
   message: string;
@@ -355,6 +360,57 @@ function parseSharedPayload(payload: NativeSharePayload): PendingShareImport {
   };
 }
 
+function buildNativeShareKey(payload: NativeSharePayload, parsed: PendingShareImport) {
+  if (payload.shareKey?.trim()) return payload.shareKey.trim();
+
+  return [
+    parsed.url,
+    parsed.memo,
+    parsed.ogp?.image ?? "",
+    (payload.images ?? [])
+      .map((image) => [
+        image.uri ?? image.fileUri ?? "",
+        image.name ?? "",
+        image.type ?? "",
+        image.dataUrl?.length ?? 0,
+        image.previewDataUrl?.length ?? 0,
+      ].join(":"))
+      .join("|"),
+  ].join("\n");
+}
+
+function readConsumedNativeShareKeys(now = Date.now()) {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CONSUMED_NATIVE_SHARE_STORAGE_KEY) ?? "{}") as Record<string, number>;
+    const freshEntries = Object.entries(parsed).filter(([, consumedAt]) => (
+      typeof consumedAt === "number" && now - consumedAt < CONSUMED_NATIVE_SHARE_TTL_MS
+    ));
+    const fresh = Object.fromEntries(freshEntries);
+    if (freshEntries.length !== Object.keys(parsed).length) {
+      localStorage.setItem(CONSUMED_NATIVE_SHARE_STORAGE_KEY, JSON.stringify(fresh));
+    }
+    return fresh;
+  } catch {
+    return {};
+  }
+}
+
+function isConsumedNativeShareKey(shareKey: string, now = Date.now()) {
+  return Boolean(readConsumedNativeShareKeys(now)[shareKey]);
+}
+
+function rememberConsumedNativeShareKey(shareKey: string, now = Date.now()) {
+  if (typeof window === "undefined" || !shareKey) return;
+
+  try {
+    const consumedKeys = readConsumedNativeShareKeys(now);
+    consumedKeys[shareKey] = now;
+    localStorage.setItem(CONSUMED_NATIVE_SHARE_STORAGE_KEY, JSON.stringify(consumedKeys));
+  } catch {}
+}
+
 export default function Home() {
   const {
     posts,
@@ -383,6 +439,9 @@ export default function Home() {
     bulkUpdatePostTags,
     deletePostsByTag,
     deletePost,
+    restorePost,
+    restoreAllTrashedPosts,
+    emptyTrash,
     previewImportPosts,
     importPosts,
     fromPost,
@@ -431,15 +490,17 @@ export default function Home() {
   const quickCameraInputRef = useRef<HTMLInputElement | null>(null);
   const pendingTimelineChromeHiddenRef = useRef<boolean | null>(null);
   const nativeShareDedupRef = useRef<{ key: string; receivedAt: number } | null>(null);
+  const activeNativeShareKeyRef = useRef<string | null>(null);
   const ogpRefreshInFlightRef = useRef<Set<string>>(new Set());
   const postsRef = useRef<Post[]>([]);
   const { mode: themeMode, setTheme } = useTheme();
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
   const visibleCalendarPosts = useMemo(() => {
-    if (hiddenTags.length === 0) return posts;
+    const activePosts = posts.filter((post) => !post.trashedAt);
+    if (hiddenTags.length === 0) return activePosts;
     const hiddenTagSet = new Set(hiddenTags);
-    return posts.filter((post) => !post.tags.some((tag) => hiddenTagSet.has(tag)));
+    return activePosts.filter((post) => !post.tags.some((tag) => hiddenTagSet.has(tag)));
   }, [hiddenTags, posts]);
 
   useEffect(() => {
@@ -567,6 +628,16 @@ export default function Home() {
     setPendingShareImport(null);
     setShareDraftMediaRefs([]);
     setShareDraftThumbnailBlobs(undefined);
+    activeNativeShareKeyRef.current = null;
+  }, []);
+
+  const rememberActiveNativeShareConsumed = useCallback(() => {
+    const shareKey = activeNativeShareKeyRef.current;
+    if (!shareKey) return;
+
+    const now = Date.now();
+    rememberConsumedNativeShareKey(shareKey, now);
+    nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
   }, []);
 
   const handlePostOgpFetchResult = useCallback(async (
@@ -642,6 +713,7 @@ export default function Home() {
   }, [handlePostOgpFetchResult, showToast, updatePostOgp]);
 
   const finishShareFlow = useCallback((returnToSource: boolean) => {
+    rememberActiveNativeShareConsumed();
     launchedFromShareRef.current = false;
     clearPendingShare();
     replaceHistoryState({ bocchiSns: true, view: "home", activeTag: null });
@@ -655,7 +727,7 @@ export default function Home() {
         void CapacitorApp.exitApp();
       }, 120);
     }
-  }, [applyHistoryState, clearPendingShare, replaceHistoryState, scrollViewportToTop, setTimelineChromeHidden]);
+  }, [applyHistoryState, clearPendingShare, rememberActiveNativeShareConsumed, replaceHistoryState, scrollViewportToTop, setTimelineChromeHidden]);
 
   const resetToCalendar = useCallback(() => {
     moveToHistoryState({ bocchiSns: true, view: "calendar" });
@@ -830,7 +902,12 @@ export default function Home() {
 
     void CapacitorApp.addListener("backButton", () => {
       const currentState = window.history.state as AppHistoryState | null;
-      if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.composer || currentState.imageViewer)) {
+      if (currentState?.bocchiSns && currentState.composer) {
+        window.dispatchEvent(new Event("bocchi:composer-close-request"));
+        return;
+      }
+
+      if (currentState?.bocchiSns && (currentState.view !== "home" || currentState.imageViewer)) {
         window.history.back();
         return;
       }
@@ -858,15 +935,24 @@ export default function Home() {
   useEffect(() => {
     const handleNativeShare = (event: Event) => {
       const customEvent = event as CustomEvent<NativeSharePayload>;
-      const nextShare = parseSharedPayload(customEvent.detail ?? {});
+      const payload = customEvent.detail ?? {};
+      const nextShare = parseSharedPayload(payload);
       if (!nextShare.url && !nextShare.memo && nextShare.images.length === 0 && nextShare.imageBlobs.length === 0) return;
-      const shareKey = `${nextShare.url}\n${nextShare.memo}\n${nextShare.ogp?.image ?? ""}\n${nextShare.images.map((image) => `${image.name}:${image.type}:${image.previewUrl}`).join(",")}`;
+      const shareKey = buildNativeShareKey(payload, nextShare);
       const now = Date.now();
       const lastShare = nativeShareDedupRef.current;
-      if (lastShare?.key === shareKey && now - lastShare.receivedAt < 10000) return;
+      if (lastShare?.key === shareKey && now - lastShare.receivedAt < NATIVE_SHARE_DEDUP_WINDOW_MS) {
+        nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
+        return;
+      }
+      if (isConsumedNativeShareKey(shareKey, now)) {
+        nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
+        return;
+      }
       nativeShareDedupRef.current = { key: shareKey, receivedAt: now };
 
       launchedFromShareRef.current = true;
+      activeNativeShareKeyRef.current = shareKey;
       setPendingShareImport(nextShare);
       setShareDraftMediaRefs([]);
       setShareDraftThumbnailBlobs(undefined);
@@ -1712,14 +1798,19 @@ export default function Home() {
       onClose={closeImageViewer}
     />
   ) : null;
-  const toastElement = toast ? (
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex justify-center px-4">
-      <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-xl">
-        <span>{toast.message}</span>
-        {toast.action && (
+  const toastElement = (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex transform-gpu justify-center px-4">
+      <div
+        className={`flex max-w-md transform-gpu items-center gap-3 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white shadow-lg transition-[opacity,transform] duration-150 ease-out [contain:paint] ${
+          toast ? "pointer-events-auto translate-y-0 opacity-100" : "translate-y-1.5 opacity-0"
+        }`}
+        aria-hidden={!toast}
+      >
+        <span>{toast?.message ?? ""}</span>
+        {toast?.action && (
           <button
             type="button"
-            className="rounded-full border border-background/35 px-3 py-1 text-xs font-bold text-background active:scale-95"
+            className="rounded-full border border-white/35 px-3 py-1 text-xs font-bold text-white active:scale-95"
             onClick={() => {
               setToast(null);
               if (toastTimerRef.current) {
@@ -1734,7 +1825,7 @@ export default function Home() {
         )}
       </div>
     </div>
-  ) : null;
+  );
   const backupImportReviewElement = pendingBackupImport ? (
     <BackupImportReview
       backupPostCount={pendingBackupImport.parsed.posts.length}
@@ -1891,7 +1982,7 @@ export default function Home() {
         <TagManagerView
           key={tagManagerIntent?.token ?? "tag-manager"}
           onBack={goBackOrHome}
-          posts={posts}
+          posts={posts.filter((post) => !post.trashedAt)}
           isBusy={isBusy}
           postThumbnailUrlMap={postThumbnailUrlMap}
           existingTags={existingTags}
@@ -1943,6 +2034,9 @@ export default function Home() {
             onPostOgpFetched={handlePostOgpFetchResult}
             onPostOgpRetry={handleRetryPostOgp}
             onPostDelete={deletePost}
+            onPostRestore={restorePost}
+            onRestoreAllTrash={restoreAllTrashedPosts}
+            onEmptyTrash={emptyTrash}
             imageViewerRoute={imageViewerRoute}
             imageViewerOriginRect={imageViewerOriginRect}
             onImageViewerOpen={openImageViewer}

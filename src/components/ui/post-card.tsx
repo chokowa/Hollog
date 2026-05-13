@@ -127,6 +127,7 @@ function PostCardComponent({
   const suppressNextOutsideClickRef = useRef(false);
   const suppressResetTimerRef = useRef<number | null>(null);
   const tagLongPressTimerRef = useRef<number | null>(null);
+  const tagLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
   const suppressTagClickRef = useRef<string | null>(null);
   const fetchedRef = useRef(false);
   const ogp = post.ogp ?? fetchedOgp;
@@ -560,6 +561,14 @@ function PostCardComponent({
     setTagMenuState({ tag, left, top });
   };
 
+  const clearTagLongPress = () => {
+    if (tagLongPressTimerRef.current !== null) {
+      window.clearTimeout(tagLongPressTimerRef.current);
+      tagLongPressTimerRef.current = null;
+    }
+    tagLongPressStartRef.current = null;
+  };
+
   const renderUrlSection = () => {
     if (!post.url) return null;
 
@@ -639,7 +648,10 @@ function PostCardComponent({
   };
 
   const renderBodySection = () => (
-    <p className={`${isDetail ? "mb-4 text-[17px]" : "text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}>
+    <p
+      data-swipe-area
+      className={`${isDetail ? "mb-4 text-[17px]" : "text-[15px]"} whitespace-pre-wrap break-words leading-relaxed text-foreground`}
+    >
       {renderBodyWithLinks(post.body)}
     </p>
   );
@@ -714,7 +726,7 @@ function PostCardComponent({
   };
 
   const renderMetaSection = () => (
-    <div>
+    <div data-swipe-area>
       {isDetail && (
         <time className="mb-3 block text-sm text-muted-foreground">
           {formatDetailedDateTime(post.updatedAt)}
@@ -728,11 +740,12 @@ function PostCardComponent({
             </time>
           )}
           {post.tags && post.tags.length > 0 && (
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto screen-scroll">
+            <div data-horizontal-scroll className="flex min-w-0 flex-1 touch-auto items-center gap-1.5 overflow-x-auto screen-scroll">
               {post.tags.map((tag, index) => (
                 <button
                   type="button"
                   data-swipe-start
+                  data-horizontal-scroll-item
                   key={index}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -745,27 +758,25 @@ function PostCardComponent({
                   onPointerDown={(e) => {
                     if (isDetail || !onTagMenuAction) return;
                     const target = e.currentTarget;
-                    if (tagLongPressTimerRef.current !== null) {
-                      window.clearTimeout(tagLongPressTimerRef.current);
-                    }
+                    clearTagLongPress();
+                    tagLongPressStartRef.current = { x: e.clientX, y: e.clientY };
                     tagLongPressTimerRef.current = window.setTimeout(() => {
                       suppressTagClickRef.current = tag;
                       openTagMenu(tag, target);
                       tagLongPressTimerRef.current = null;
+                      tagLongPressStartRef.current = null;
                     }, 420);
                   }}
-                  onPointerUp={() => {
-                    if (tagLongPressTimerRef.current !== null) {
-                      window.clearTimeout(tagLongPressTimerRef.current);
-                      tagLongPressTimerRef.current = null;
+                  onPointerMove={(e) => {
+                    const start = tagLongPressStartRef.current;
+                    if (!start) return;
+                    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) {
+                      clearTagLongPress();
                     }
                   }}
-                  onPointerLeave={() => {
-                    if (tagLongPressTimerRef.current !== null) {
-                      window.clearTimeout(tagLongPressTimerRef.current);
-                      tagLongPressTimerRef.current = null;
-                    }
-                  }}
+                  onPointerUp={clearTagLongPress}
+                  onPointerLeave={clearTagLongPress}
+                  onPointerCancel={clearTagLongPress}
                   className={`shrink-0 rounded-full transition-colors ${
                     isTagHidden?.(tag)
                       ? "bg-muted text-muted-foreground/60 hover:bg-muted"

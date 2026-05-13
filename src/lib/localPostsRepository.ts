@@ -110,6 +110,7 @@ function normalizePost(rawPost: LegacyPost): Post {
     source: rawPost.source ?? "manual",
     createdAt: rawPost.createdAt ?? new Date().toISOString(),
     updatedAt: rawPost.updatedAt ?? rawPost.createdAt ?? new Date().toISOString(),
+    trashedAt: rawPost.trashedAt,
   };
 }
 

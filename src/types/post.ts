@@ -1,6 +1,6 @@
 export type PostType = "post" | "clip" | "posted";
 export type PostSource = "manual" | "share" | "web" | "x";
-export type TimelineFilter = "all" | "post" | "clip" | "posted" | "media";
+export type TimelineFilter = "all" | "post" | "clip" | "posted" | "media" | "trash";
 export type PostMediaKind = "image" | "video";
 export type PostMediaStorage = "device-reference" | "app-local-copy";
 
@@ -52,6 +52,7 @@ export type Post = {
   source: PostSource;
   createdAt: string;
   updatedAt: string;
+  trashedAt?: string;
 };
 
 export type PostRecordInput = Omit<Post, "id" | "createdAt" | "updatedAt">;
