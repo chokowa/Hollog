@@ -1,17 +1,15 @@
 "use client";
 
-import { ChevronDown, Clipboard, ExternalLink, ImagePlus, Link2, Loader2, Tags, X } from "lucide-react";
+import { Clipboard, ExternalLink, ImagePlus, Link2, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { createThumbnailBlobs } from "@/lib/image-thumbnails";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import {
   getSystemTagsForUrl,
-  getVisibleTagSuggestions,
   readSystemTaggingEnabled,
-  readTagSuggestionCatalog,
-  writeTagSuggestionCatalog,
 } from "@/lib/tag-suggestions";
+import { TagInput, type TagInputHandle } from "@/components/ui/tag-input";
 import type { OgpPreview, PostMediaRef, PostType } from "@/types/post";
 
 type ShareImportProps = {
@@ -107,9 +105,6 @@ export function ShareImport({
   const [sharedImagePreviews, setSharedImagePreviews] = useState(initialImagePreviews);
   const [imageBlobs, setImageBlobs] = useState(initialImageBlobs);
   const [tags, setTags] = useState<string[]>(initialTags);
-  const [tagInput, setTagInput] = useState("");
-  const [showSuggest, setShowSuggest] = useState(false);
-  const [tagSuggestions, setTagSuggestions] = useState(readTagSuggestionCatalog);
   const [removedAutoTags, setRemovedAutoTags] = useState<string[]>([]);
   const [saveDestination, setSaveDestination] = useState<SaveDestination>("clip");
   const [isPreparingImages, setIsPreparingImages] = useState(false);
@@ -118,13 +113,7 @@ export function ShareImport({
   const [brokenPreviewIds, setBrokenPreviewIds] = useState<Set<string>>(() => new Set());
   const ogpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFetchedUrl = useRef("");
-
-  const filteredSuggestions = getVisibleTagSuggestions(tagSuggestions, tagInput, tags).slice(0, 6);
-  const getPendingTag = () => {
-    const trimmed = tagInput.trim().replace(/^#/, "");
-    if (!trimmed || tags.includes(trimmed)) return "";
-    return trimmed;
-  };
+  const tagInputRef = useRef<TagInputHandle>(null);
   const blobPreviewItems = useMemo(
     () => imageBlobs.map((blob, index) => ({
       kind: "blob" as const,
@@ -209,38 +198,8 @@ export function ShareImport({
     });
   };
 
-  const addTag = (value: string) => {
-    const tag = value.trim().replace(/^#/, "");
-    if (!tag || tags.includes(tag)) {
-      setTagInput("");
-      return;
-    }
-
-    if (!tagSuggestions.some((suggestion) => suggestion.name === tag)) {
-      setTagSuggestions(writeTagSuggestionCatalog([...tagSuggestions, { name: tag, isSystem: false }]));
-    }
-
-    setTags((current) => [...current, tag]);
-    setTagInput("");
-    setShowSuggest(false);
-  };
-
-  const commitPendingTag = () => {
-    const pendingTag = getPendingTag();
-    if (!pendingTag) return "";
-    addTag(pendingTag);
-    return pendingTag;
-  };
-
-  const handleRemoveTag = (tagToRemove: string) => {
-    if (getSystemTagsForUrl(url).includes(tagToRemove)) {
-      setRemovedAutoTags((current) => current.includes(tagToRemove) ? current : [...current, tagToRemove]);
-    }
-    setTags((current) => current.filter((tag) => tag !== tagToRemove));
-  };
-
   const handleSave = async () => {
-    const pendingTag = getPendingTag();
+    const pendingTag = tagInputRef.current?.getPendingTag() ?? "";
     const nextTags = pendingTag ? [...tags, pendingTag] : tags;
     setIsPreparingImages(true);
     try {
@@ -483,105 +442,21 @@ export function ShareImport({
           )}
         </section>
 
-        <section className="relative rounded-[20px] border border-border bg-card px-3 py-2.5 shadow-sm transition-colors focus-within:border-muted-foreground">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Tags size={16} className="shrink-0 text-muted-foreground" />
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-xs font-medium text-primary"
-              >
-                {tag}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveTag(tag)}
-                  className="rounded-full p-0.5 transition-colors hover:bg-primary/20"
-                >
-                  <X size={12} />
-                </button>
-              </span>
-            ))}
-            <input
-              type="text"
-              value={tagInput}
-              onChange={(event) => {
-                setTagInput(event.target.value);
-                setShowSuggest(true);
-              }}
-              onBeforeInput={(event) => {
-                const nativeEvent = event.nativeEvent as InputEvent;
-                if (nativeEvent.inputType === "insertLineBreak") {
-                  event.preventDefault();
-                  commitPendingTag();
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === ",") {
-                  event.preventDefault();
-                  commitPendingTag();
-                }
-                if (event.key === "Backspace" && !tagInput && tags.length > 0) {
-                  handleRemoveTag(tags[tags.length - 1]);
-                }
-              }}
-              onFocus={() => setShowSuggest(true)}
-              onBlur={() => setTimeout(() => {
-                commitPendingTag();
-                setShowSuggest(false);
-              }, 200)}
-              placeholder={tags.length === 0 ? "タグを入力..." : "さらに追加..."}
-              className="min-w-[96px] flex-1 bg-transparent text-sm outline-none"
-            />
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                setShowSuggest(!showSuggest);
-              }}
-              className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <ChevronDown size={16} className={showSuggest ? "rotate-180 transition-transform" : "transition-transform"} />
-            </button>
-          </div>
-
-          {showSuggest && (tagInput.trim() || filteredSuggestions.length > 0) && (
-            <div className="absolute bottom-full left-0 right-0 z-20 mb-2 max-h-44 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-lg screen-scroll">
-              {tagInput.trim() && !tags.includes(tagInput.trim()) && !tagSuggestions.some((tag) => tag.name === tagInput.trim()) && (
-                <button
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    addTag(tagInput);
-                  }}
-                  className="mb-2 flex w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-                >
-                  <span className="flex items-center justify-center rounded-full bg-primary/20 p-1">
-                    <Tags size={12} />
-                  </span>
-                  「{tagInput}」を新規追加
-                </button>
-              )}
-              {filteredSuggestions.length > 0 && (
-                <div className="mb-1 px-1 text-xs font-medium text-muted-foreground">候補から選ぶ</div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {filteredSuggestions.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      addTag(tag);
-                    }}
-                    className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
+        <TagInput
+          ref={tagInputRef}
+          tags={tags}
+          onChange={(nextTags) => {
+            const autoUrlTags = getSystemTagsForUrl(url);
+            const removedAutoUrlTags = tags.filter((tag) => !nextTags.includes(tag) && autoUrlTags.includes(tag));
+            setRemovedAutoTags((current) => {
+              const preserved = current.filter((tag) => nextTags.includes(tag) || !autoUrlTags.includes(tag));
+              return [...new Set([...preserved, ...removedAutoUrlTags])];
+            });
+            setTags(nextTags);
+          }}
+          variant="shareImport"
+          maxSuggestions={6}
+        />
 
         <section className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
           <p className="mb-2 text-xs font-medium text-muted-foreground">保存先</p>

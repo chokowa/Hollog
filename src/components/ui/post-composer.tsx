@@ -2,16 +2,14 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Camera, ImagePlus, Link2, Tags, X, Clipboard, ChevronDown, ExternalLink, GripVertical, Loader2 } from "lucide-react";
+import { Camera, ImagePlus, Link2, Tags, X, Clipboard, ExternalLink, GripVertical, Loader2 } from "lucide-react";
 import { fetchOgpPreview } from "@/lib/ogp-preview";
 import { moveMediaOrderItem, normalizeImageBlobIds, normalizeMediaOrder } from "@/lib/post-media";
 import {
   getSystemTagsForUrl,
-  getVisibleTagSuggestions,
   readSystemTaggingEnabled,
-  readTagSuggestionCatalog,
-  writeTagSuggestionCatalog,
 } from "@/lib/tag-suggestions";
+import { TagInput, type TagInputHandle } from "@/components/ui/tag-input";
 import type { OgpPreview, PostMediaOrderItem, PostMediaRef, PostType } from "@/types/post";
 
 export type InlineImageSource = "picker" | "camera" | "clipboard";
@@ -64,10 +62,7 @@ export function PostComposer({
   onNativeClipboardImagesSelect,
   onSubmit,
 }: PostComposerProps) {
-  const [tagInput, setTagInput] = useState("");
-  const [showSuggest, setShowSuggest] = useState(false);
   const [isBodyFocused, setIsBodyFocused] = useState(false);
-  const [tagSuggestions, setTagSuggestions] = useState(readTagSuggestionCatalog);
   const [removedAutoTags, setRemovedAutoTags] = useState<string[]>([]);
   const [ogp, setOgp] = useState<OgpPreview | null>(value.ogp ?? null);
   const [ogpLoading, setOgpLoading] = useState(false);
@@ -78,8 +73,7 @@ export function PostComposer({
   const latestOnChangeRef = useRef(onChange);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const tagInputRef = useRef<HTMLInputElement>(null);
-  const restoreTagFocusRef = useRef(false);
+  const tagInputRef = useRef<TagInputHandle>(null);
   const imageCount = (value.imageBlobs || []).length + (value.mediaRefs || []).length;
   const previewImageList = useMemo(() => imagePreviewUrls ?? [], [imagePreviewUrls]);
   const previewMediaList = useMemo(() => mediaPreviewUrls ?? [], [mediaPreviewUrls]);
@@ -151,7 +145,6 @@ export function PostComposer({
   }, [value.url, value.ogp, fetchOgp]);
 
   const currentTags = value.tagsText.split(",").map(t => t.trim()).filter(Boolean);
-  const suggests = getVisibleTagSuggestions(tagSuggestions, tagInput, currentTags);
   const bodyCharacterCount = value.body.length;
   const canSubmit = !pending && (Boolean(value.body.trim()) || imageCount > 0 || Boolean(value.url.trim()));
   const orderedPreviewItems = useMemo(() => {
@@ -172,12 +165,6 @@ export function PostComposer({
     });
   }, [normalizedImageBlobIds, normalizedMediaOrder, previewImageList, previewMediaList, value.mediaRefs]);
 
-  const getPendingTag = () => {
-    const trimmed = tagInput.trim().replace(/^#/, "");
-    if (!trimmed || currentTags.includes(trimmed)) return "";
-    return trimmed;
-  };
-
   useEffect(() => {
     if (!autoTagUrls || !readSystemTaggingEnabled()) return;
 
@@ -191,65 +178,6 @@ export function PostComposer({
       onChange({ ...value, tagsText: nextTags.join(", ") });
     }
   }, [autoTagUrls, currentTags, onChange, removedAutoTags, value]);
-
-  const addTag = (newTag: string) => {
-    const trimmed = newTag.trim().replace(/^#/, "");
-    if (!trimmed) return;
-
-    if (!tagSuggestions.some((tag) => tag.name === trimmed)) {
-      setTagSuggestions(writeTagSuggestionCatalog([...tagSuggestions, { name: trimmed, isSystem: false }]));
-    }
-
-    if (currentTags.includes(trimmed)) {
-      setTagInput("");
-      return;
-    }
-    const nextTags = [...currentTags, trimmed].join(", ");
-    onChange({ ...value, tagsText: nextTags });
-    setTagInput("");
-    setShowSuggest(false);
-  };
-
-  const commitPendingTag = () => {
-    const pendingTag = getPendingTag();
-    if (!pendingTag) return "";
-    addTag(pendingTag);
-    return pendingTag;
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    const nextTags = currentTags.filter(t => t !== tagToRemove).join(", ");
-    if (getSystemTagsForUrl(value.url).includes(tagToRemove)) {
-      setRemovedAutoTags((current) => current.includes(tagToRemove) ? current : [...current, tagToRemove]);
-    }
-    onChange({ ...value, tagsText: nextTags });
-  };
-
-  const focusTagInput = useCallback(() => {
-    setShowSuggest(true);
-    window.setTimeout(() => {
-      tagInputRef.current?.focus();
-    }, 0);
-  }, []);
-
-  const keepTagInputActive = useCallback(() => {
-    restoreTagFocusRef.current = true;
-    focusTagInput();
-    window.setTimeout(() => {
-      if (!restoreTagFocusRef.current) return;
-      tagInputRef.current?.focus();
-    }, 80);
-  }, [focusTagInput]);
-
-  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      commitPendingTag();
-      keepTagInputActive();
-    } else if (e.key === "Backspace" && tagInput === "" && currentTags.length > 0) {
-      removeTag(currentTags[currentTags.length - 1]);
-    }
-  };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
@@ -372,7 +300,7 @@ export function PostComposer({
           <button
             type="button"
             onClick={() => {
-              const pendingTag = getPendingTag();
+              const pendingTag = tagInputRef.current?.getPendingTag() ?? "";
               if (pendingTag) {
                 onSubmit(pendingTag);
                 return;
@@ -444,118 +372,21 @@ export function PostComposer({
                   <Tags size={14} />
                   <span>タグ</span>
                 </div>
-                <div
-                  className="relative rounded-2xl border border-border bg-muted/20 px-3 py-2.5 transition-colors focus-within:border-muted-foreground"
-                  onClick={(event) => {
-                    const target = event.target as HTMLElement | null;
-                    if (target?.closest("button")) return;
-                    focusTagInput();
+                <TagInput
+                  ref={tagInputRef}
+                  tags={currentTags}
+                  onChange={(nextTags) => {
+                    const autoUrlTags = getSystemTagsForUrl(value.url);
+                    const removedAutoUrlTags = currentTags.filter((tag) => !nextTags.includes(tag) && autoUrlTags.includes(tag));
+                    setRemovedAutoTags((current) => {
+                      const preserved = current.filter((tag) => nextTags.includes(tag) || !autoUrlTags.includes(tag));
+                      return [...new Set([...preserved, ...removedAutoUrlTags])];
+                    });
+                    onChange({ ...value, tagsText: nextTags.join(", ") });
                   }}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    {currentTags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="flex items-center gap-1 rounded-full bg-secondary px-3 py-1.5 text-sm text-foreground"
-                      >
-                        #{tag}
-                        <button
-                          type="button"
-                          onClick={() => removeTag(tag)}
-                          className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
-                          aria-label={`${tag}を削除`}
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))}
-                    <input
-                      ref={tagInputRef}
-                      value={tagInput}
-                      onChange={(e) => {
-                        setTagInput(e.target.value);
-                        setShowSuggest(true);
-                      }}
-                      onBeforeInput={(event) => {
-                        const nativeEvent = event.nativeEvent as InputEvent;
-                        if (nativeEvent.inputType === "insertLineBreak") {
-                          event.preventDefault();
-                          commitPendingTag();
-                          keepTagInputActive();
-                        }
-                      }}
-                      onKeyDown={handleTagKeyDown}
-                      onFocus={() => {
-                        restoreTagFocusRef.current = false;
-                        setShowSuggest(true);
-                      }}
-                      onBlur={() => setTimeout(() => {
-                        if (restoreTagFocusRef.current) {
-                          keepTagInputActive();
-                          return;
-                        }
-                        commitPendingTag();
-                        setShowSuggest(false);
-                      }, 200)}
-                      enterKeyHint="done"
-                      placeholder={currentTags.length === 0 ? "タグを入力..." : "さらに追加..."}
-                      className="min-w-[120px] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (showSuggest) {
-                          setShowSuggest(false);
-                          return;
-                        }
-                        focusTagInput();
-                      }}
-                      className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted"
-                      aria-label="タグ候補を表示"
-                    >
-                      <ChevronDown size={16} className={showSuggest ? "rotate-180 transition-transform" : "transition-transform"} />
-                    </button>
-                  </div>
-
-                  {showSuggest && (tagInput.trim() || suggests.length > 0) && (
-                    <div className="absolute bottom-full left-0 right-0 z-20 mb-2 max-h-44 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-lg screen-scroll">
-                      {tagInput.trim() && !currentTags.includes(tagInput.trim()) && !tagSuggestions.some((tag) => tag.name === tagInput.trim()) && (
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            addTag(tagInput);
-                          }}
-                          className="mb-2 flex w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-                        >
-                          <span className="flex items-center justify-center rounded-full bg-primary/20 p-1">
-                            <Tags size={12} />
-                          </span>
-                          「{tagInput}」を新規追加
-                        </button>
-                      )}
-                      {suggests.length > 0 && (
-                        <div className="mb-1 px-1 text-xs font-medium text-muted-foreground">候補から選ぶ</div>
-                      )}
-                      <div className="flex flex-wrap gap-2">
-                        {suggests.map((tag) => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              addTag(tag);
-                            }}
-                            className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
-                          >
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  variant="composer"
+                  autoFocusOnContainerClick
+                />
               </div>
 
             <div className="flex items-end justify-between gap-3">
