@@ -7,6 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "simulate:app": "tsx scripts/simulate-app.ts",
+    "export:codex-timeline": "tsx scripts/export-codex-project-chat-timeline.ts",
+    "export:codex-history": "tsx scripts/export-codex-history-summary.ts",
+    "audit:home-ui": "tsx scripts/audit-home-ui.ts",
+    "audit:calendar-ui": "tsx scripts/audit-calendar-ui.ts",
+    "audit:ui": "tsx scripts/audit-ui.ts",
     "build:web": "next build",
     "cap:sync:android": "npm run build:web && npx cap sync android",
     "cap:open:android": "npm run cap:sync:android && npx cap open android"
@@ -31,6 +37,7 @@
     "eslint-config-next": "16.2.6",
     "playwright": "^1.59.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "overrides": {

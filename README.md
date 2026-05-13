@@ -1,8 +1,6 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
 ## Getting Started
 
-First, run the development server:
+開発サーバーを起動する場合:
 
 ```bash
 npm run dev
@@ -14,23 +12,31 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ブラウザで [http://localhost:3000](http://localhost:3000) を開くと確認できます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## App Simulation
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+手動確認の前に、主要な保存・更新・削除・復元・タブ別表示・インポート競合・設定保存まわりをコード上でシミュレートできます。
 
-## Learn More
+```bash
+npm run simulate:app
+```
 
-To learn more about Next.js, take a look at the following resources:
+このコマンドは実アプリを起動せず、状態遷移と保存ロジックを直接たどるスモークテストです。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## HOME UI Audit
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+HOME 画面については、人間が触りそうな操作を前提にした軽量監査も実行できます。
 
-## Deploy on Vercel
+```bash
+npm run audit:home-ui
+npm run audit:calendar-ui
+npm run audit:ui
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+これは実描画ではなく、タップ、長押し、横スクロール、固定 UI の重なりなどをコード上から見て `pass / warn / fail` を返します。`audit:ui` は HOME とカレンダーをまとめて確認します。`warn` が出た箇所を優先して手動テストすると、確認範囲をかなり絞れます。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+
+- Android / Capacitor を優先する方針です。
+- Web UI を触らずに確認できるロジックは、なるべく `simulate:app` に追加していく想定です。
