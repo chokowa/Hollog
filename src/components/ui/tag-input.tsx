@@ -214,7 +214,7 @@ export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagIn
             setShowSuggest(false);
           }, 200)}
           enterKeyHint="done"
-          placeholder={tags.length === 0 ? "タグを入力..." : "さらに追加..."}
+          placeholder={tags.length === 0 ? "タグを入力" : "タグを追加"}
           className={classes.input}
         />
         <button
@@ -248,7 +248,7 @@ export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagIn
               <span className="flex items-center justify-center rounded-full bg-primary/20 p-1">
                 <Tags size={12} />
               </span>
-              「{tagInput}」を新規追加
+              「{tagInput}」を追加
             </button>
           )}
           {suggestions.length > 0 && (

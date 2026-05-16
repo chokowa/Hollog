@@ -27,7 +27,7 @@ async function loadImage(blob: Blob) {
 
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Failed to decode image"));
+      image.onerror = () => reject(new Error("画像を読み込めませんでした。"));
       image.src = objectUrl;
     });
 
@@ -58,7 +58,7 @@ export async function createThumbnailBlob(blob: Blob) {
 
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) {
-      throw new Error("Failed to create 2D canvas context");
+      throw new Error("画像処理を準備できませんでした。");
     }
 
     context.drawImage(image, 0, 0, width, height);

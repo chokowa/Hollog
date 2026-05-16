@@ -13,6 +13,7 @@
     "audit:home-ui": "tsx scripts/audit-home-ui.ts",
     "audit:calendar-ui": "tsx scripts/audit-calendar-ui.ts",
     "audit:ui": "tsx scripts/audit-ui.ts",
+    "design:check": "npm run lint && npm run simulate:app && npm run audit:ui",
     "build:web": "next build",
     "cap:sync:android": "npm run build:web && npx cap sync android",
     "cap:open:android": "npm run cap:sync:android && npx cap open android"

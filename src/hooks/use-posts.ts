@@ -463,7 +463,7 @@ export function usePosts() {
         return [created, ...withoutDuplicate];
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sync post");
+      setError(err instanceof Error ? err.message : "別画面で保存した投稿を同期できませんでした。");
     }
   }, [getInstanceId]);
 
@@ -534,7 +534,7 @@ export function usePosts() {
         setPosts(nextPosts);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load posts");
+      setError(err instanceof Error ? err.message : "投稿を読み込めませんでした。");
     } finally {
       if (requestId === loadPostsRequestIdRef.current) {
         setIsBusy(false);
@@ -720,7 +720,7 @@ export function usePosts() {
       broadcastCreatedPost(created.id);
       return created;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create post");
+      setError(err instanceof Error ? err.message : "投稿を保存できませんでした。");
       return null;
     } finally {
       setIsBusy(false);
@@ -758,7 +758,7 @@ export function usePosts() {
       setStatusMessage("投稿を更新しました。");
       return updated;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update post");
+      setError(err instanceof Error ? err.message : "投稿を更新できませんでした。");
       return null;
     } finally {
       setIsBusy(false);
@@ -786,7 +786,7 @@ export function usePosts() {
       setStatusMessage(nextType === "posted" ? "投稿済みにしました。" : "未投稿に戻しました。");
       return updated;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update post status");
+      setError(err instanceof Error ? err.message : "投稿状態を変更できませんでした。");
       return null;
     } finally {
       setIsBusy(false);
@@ -808,7 +808,7 @@ export function usePosts() {
       setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
       return updated;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update OGP data");
+      setError(err instanceof Error ? err.message : "リンクのプレビューを更新できませんでした。");
       return null;
     }
   };
@@ -833,7 +833,7 @@ export function usePosts() {
       setStatusMessage("投稿をゴミ箱に移動しました。");
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete post");
+      setError(err instanceof Error ? err.message : "投稿をゴミ箱に移動できませんでした。");
       return false;
     } finally {
       setIsBusy(false);
@@ -849,7 +849,7 @@ export function usePosts() {
       const updatedPosts = await Promise.all(touchedPostIds.map(async (postId) => {
         const post = postsById.get(postId);
         if (!post) {
-          throw new Error("Post not found");
+          throw new Error("投稿が見つかりませんでした。");
         }
 
         const nextTags = mode === "append"
@@ -873,10 +873,10 @@ export function usePosts() {
       const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
       postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((post) => updatedById.get(post.id) ?? post));
-      setStatusMessage(`${updatedPosts.length}件の投稿にタグを適用しました。`);
+      setStatusMessage(`${updatedPosts.length}件の投稿にタグを反映しました。`);
       return updatedPosts;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to bulk update post tags");
+      setError(err instanceof Error ? err.message : "タグを反映できませんでした。");
       return null;
     } finally {
       setIsBusy(false);
@@ -904,7 +904,7 @@ export function usePosts() {
       setStatusMessage(`${updatedPosts.length}件の投稿をゴミ箱に移動しました。`);
       return updatedPosts.length;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete tagged posts");
+      setError(err instanceof Error ? err.message : "タグの投稿をゴミ箱に移動できませんでした。");
       return 0;
     } finally {
       setIsBusy(false);
@@ -927,10 +927,10 @@ export function usePosts() {
       );
       postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((post) => (post.id === id ? restored : post)));
-      setStatusMessage("投稿を元に戻しました。");
+      setStatusMessage("投稿を一覧に戻しました。");
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to restore post");
+      setError(err instanceof Error ? err.message : "投稿を一覧に戻せませんでした。");
       return false;
     } finally {
       setIsBusy(false);
@@ -954,10 +954,10 @@ export function usePosts() {
       const restoredById = new Map(restoredPosts.map((post) => [post.id, post]));
       postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.map((post) => restoredById.get(post.id) ?? post));
-      setStatusMessage(`${restoredPosts.length}件の投稿を元に戻しました。`);
+      setStatusMessage(`${restoredPosts.length}件の投稿を一覧に戻しました。`);
       return restoredPosts.length;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to restore trashed posts");
+      setError(err instanceof Error ? err.message : "ゴミ箱の投稿を一覧に戻せませんでした。");
       return 0;
     } finally {
       setIsBusy(false);
@@ -972,10 +972,10 @@ export function usePosts() {
       const deletedIds = new Set(targets.map((post) => post.id));
       postsMutationVersionRef.current += 1;
       setPosts((prev) => prev.filter((post) => !deletedIds.has(post.id)));
-      setStatusMessage(`${targets.length}件の投稿を完全に削除しました。`);
+      setStatusMessage(`ゴミ箱内の${targets.length}件を完全に削除しました。`);
       return targets.length;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to empty trash");
+      setError(err instanceof Error ? err.message : "ゴミ箱を空にできませんでした。");
       return 0;
     } finally {
       setIsBusy(false);
@@ -987,7 +987,7 @@ export function usePosts() {
       const latestPosts = await postsRepository.list();
       return buildImportPlan(latestPosts, importedPosts).preview;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to preview import");
+      setError(err instanceof Error ? err.message : "バックアップの内容を確認できませんでした。");
       return null;
     }
   };
@@ -1013,11 +1013,11 @@ export function usePosts() {
       const updatedById = new Map(updatedPosts.map((post) => [post.id, post]));
       postsMutationVersionRef.current += 1;
       setPosts(nextPosts.map((post) => updatedById.get(post.id) ?? post));
-      setStatusMessage(`${plan.preview.addedCount}件の投稿を復元しました。`);
+      setStatusMessage("バックアップの内容を反映しました。");
 
       return plan.preview;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import posts");
+      setError(err instanceof Error ? err.message : "バックアップの内容を復元できませんでした。");
       return null;
     } finally {
       setIsBusy(false);

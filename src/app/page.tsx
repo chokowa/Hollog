@@ -696,17 +696,17 @@ export default function Home() {
   const handleRetryPostOgp = useCallback(async (post: Post) => {
     if (!post.url) return;
     if (ogpRefreshInFlightRef.current.has(post.id)) {
-      showToast("プレビューを再取得中です。");
+      showToast("リンクのプレビューを再取得中です。");
       return;
     }
 
     const resetPost = await updatePostOgp(post, post.ogp, resetOgpFetchState());
     if (!resetPost) {
-      showToast("プレビューを再取得できませんでした。");
+      showToast("リンクのプレビューを再取得できませんでした。");
       return;
     }
 
-    showToast("プレビューを再取得します。");
+    showToast("リンクのプレビューを再取得します。");
     ogpRefreshInFlightRef.current.add(resetPost.id);
     try {
       const refreshed = await fetchOgpPreview(resetPost.url!, { bypassCache: true });
@@ -1066,7 +1066,7 @@ export default function Home() {
 
   const showQuickPostToast = useCallback((post: Post | null, message: string) => {
     if (!post) {
-      showToast("投稿できませんでした。");
+      showToast("投稿を保存できませんでした。");
       return;
     }
 
@@ -1140,7 +1140,7 @@ export default function Home() {
     const deletedCount = await deletePostsByTag(tag);
     setTagDeleteIntent(null);
     if (deletedCount > 0) {
-      showToast(`${deletedCount}件の投稿を削除しました。`);
+      showToast(`${deletedCount}件の投稿をゴミ箱に移動しました。`);
     }
   }, [deletePostsByTag, showToast]);
 
@@ -1210,10 +1210,10 @@ export default function Home() {
     if (changedResults.length > 0) {
       const originalSize = changedResults.reduce((total, result) => total + result.originalSize, 0);
       const finalSize = changedResults.reduce((total, result) => total + result.finalSize, 0);
-      showToast(`軽量化しました（${formatImageSize(originalSize)} → ${formatImageSize(finalSize)}）`);
+      showToast(`画像を軽量化しました（${formatImageSize(originalSize)} → ${formatImageSize(finalSize)}）`);
     } else {
       const originalSize = largeFiles.reduce((total, file) => total + file.size, 0);
-      showToast(`軽量化できず元の画像を追加しました（${formatImageSize(originalSize)}）`);
+      showToast(`元のサイズのまま画像を追加しました（${formatImageSize(originalSize)}）`);
     }
 
     return preparedFiles.map((result) => result.file);
@@ -1583,7 +1583,7 @@ export default function Home() {
   const handleCopyForX = async () => {
     if (!selectedPost) return;
     const copied = await copyTextToClipboard(buildTweetText(selectedPost));
-    showToast(copied ? "X投稿用テキストをコピーしました。" : "コピーできませんでした。");
+    showToast(copied ? "Xに投稿するテキストをコピーしました。" : "コピーできませんでした。");
   };
 
   const handleOpenX = () => {
@@ -1601,7 +1601,7 @@ export default function Home() {
 
   const handleSavePostMedia = useCallback(async (post: Post) => {
     if (!Capacitor.isNativePlatform()) {
-      alert("端末への保存はAndroidアプリで利用できます。");
+      alert("画像の端末保存はAndroidアプリで利用できます。");
       return;
     }
 
@@ -1629,14 +1629,14 @@ export default function Home() {
 
       if (items.length === 0) {
         const hasDeviceReference = post.mediaRefs?.some((mediaRef) => mediaRef.kind === "image" && mediaRef.storage === "device-reference");
-        showToast(hasDeviceReference ? "この画像はすでに端末内にあります。" : "保存できる画像がありません。");
+        showToast(hasDeviceReference ? "この画像は端末内の元ファイルを参照しています。" : "保存できる画像がありません。");
         return;
       }
 
       const result = await saveNativeImages(items);
-      showToast(result.savedCount > 0 ? "端末に保存しました。" : "保存できませんでした。");
+      showToast(result.savedCount > 0 ? "画像を端末に保存しました。" : "画像を端末に保存できませんでした。");
     } catch {
-      showToast("保存できませんでした。");
+      showToast("画像を端末に保存できませんでした。");
     }
   }, [showToast]);
 
@@ -1648,7 +1648,7 @@ export default function Home() {
     }
 
     if (!Capacitor.isNativePlatform()) {
-      showToast("画像コピーはAndroidアプリで利用できます。");
+      showToast("画像のコピーはAndroidアプリで利用できます。");
       return;
     }
 
@@ -1677,12 +1677,12 @@ export default function Home() {
 
   const handlePostTypeChange = async (post: Post, nextType: PostType) => {
     const success = await updatePost(post.id, { ...fromPost(post), type: nextType }, post.source);
-    showToast(success ? `${postTypeLabels[nextType]}に移動しました。` : "移動できませんでした。");
+    showToast(success ? `${postTypeLabels[nextType]}へ移動しました。` : "移動できませんでした。");
   };
 
   const handleDelete = async () => {
     if (!selectedPost) return;
-    if (confirm("本当に削除しますか？")) {
+    if (confirm("この投稿をゴミ箱に移動しますか？")) {
       await deletePost(selectedPost.id);
       replaceToHome();
     }
@@ -1709,7 +1709,7 @@ export default function Home() {
       thumbnailBlobs: postData.thumbnailBlobs,
     }, Capacitor.isNativePlatform() && launchedFromShareRef.current ? { commit: "sync" } : undefined);
     if (!created) {
-      showToast("保存できませんでした。");
+      showToast("共有内容を保存できませんでした。");
       return;
     }
     if (isOgpIncomplete(created)) {
@@ -1839,7 +1839,7 @@ export default function Home() {
               if (success) {
                 replaceToDetail(selectedPost.id);
               } else {
-                showToast("更新できませんでした。");
+                showToast("投稿を更新できませんでした。");
               }
             } else {
               const nextValue = pendingTag
@@ -1850,7 +1850,7 @@ export default function Home() {
                 setComposerValue(emptyForm);
                 replaceToHome();
               } else {
-                showToast("保存できませんでした。");
+                showToast("投稿を保存できませんでした。");
               }
             }
           }}
@@ -2010,7 +2010,6 @@ export default function Home() {
                 onRefresh={loadPosts}
                 isBusy={isBusy}
                 onTimelineTopRequest={requestTimelineTop}
-                onSettingsClick={() => pushHistoryState({ bocchiSns: true, view: "settings" })}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
               />
@@ -2035,7 +2034,7 @@ export default function Home() {
       )}
 
       <BottomNav
-        activeView={activeView === "settings" ? "settings" : activeView === "calendar" ? "calendar" : "home"}
+        activeView={activeView === "calendar" ? "calendar" : "home"}
         onViewChange={(view) => {
           if (view === "post") {
             openNewComposer();
@@ -2103,7 +2102,7 @@ export default function Home() {
             if (success) {
               replaceToDetail(selectedPost.id);
             } else {
-              showToast("更新できませんでした。");
+              showToast("投稿を更新できませんでした。");
             }
           } else {
             const nextValue = pendingTag
@@ -2114,7 +2113,7 @@ export default function Home() {
               setComposerValue(emptyForm);
               replaceToHome();
             } else {
-              showToast("保存できませんでした。");
+              showToast("投稿を保存できませんでした。");
             }
           }
         }}
@@ -2134,9 +2133,9 @@ export default function Home() {
       {toastElement}
       {tagDeleteIntent && (
         <SwipeConfirmSheet
-          title={`#${tagDeleteIntent.tag} の投稿を削除`}
-          description={`${tagDeleteIntent.count}件の投稿が削除されます。この操作は元に戻せません。`}
-          confirmLabel="削除する"
+          title={`#${tagDeleteIntent.tag} の投稿をゴミ箱へ`}
+          description={`${tagDeleteIntent.count}件の投稿をゴミ箱に移動します。ゴミ箱から戻せます。`}
+          confirmLabel="ゴミ箱に移動"
           onCancel={() => setTagDeleteIntent(null)}
           onConfirm={() => void handleDeletePostsByTag(tagDeleteIntent.tag)}
         />

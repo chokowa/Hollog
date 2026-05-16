@@ -202,7 +202,7 @@ export function PostComposer({
     }
 
     if (!navigator.clipboard || !navigator.clipboard.read) {
-      alert("現在の接続環境ではブラウザのセキュリティ制限によりクリップボードにアクセスできません。");
+      alert("この環境ではクリップボードの画像を読み取れません。画像ボタンから選択してください。");
       return;
     }
     try {
@@ -222,7 +222,7 @@ export function PostComposer({
       }
     } catch (err) {
       console.error(err);
-      alert("ブラウザの制限によりクリップボードから画像を読み込めません。");
+      alert("クリップボードから画像を読み取れませんでした。画像ボタンから選択してください。");
     }
   };
 
@@ -340,7 +340,7 @@ export function PostComposer({
                       }}
                       className={`relative aspect-square overflow-hidden rounded-xl border border-border bg-black/5 ${draggingMediaKey === dragKey ? "opacity-70" : ""}`}
                     >
-                    <img src={item.url} alt={`Preview ${previewIndex + 1}`} className="h-full w-full object-cover" />
+                    <img src={item.url} alt={`プレビュー画像 ${previewIndex + 1}`} className="h-full w-full object-cover" />
                     <div className="absolute left-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white/85 shadow-sm">
                       <GripVertical size={15} />
                     </div>
@@ -444,7 +444,7 @@ export function PostComposer({
                   aria-label="コピーした画像を貼り付け"
                 >
                   <Clipboard size={20} />
-                  <span className="text-[11px] font-medium">貼付</span>
+                  <span className="text-[11px] font-medium">貼り付け</span>
                 </button>
               </div>
               <div className="text-right text-xs text-muted-foreground">
@@ -500,7 +500,7 @@ export function PostComposer({
             )}
           </div>
           <div>
-            <p className="mb-2 text-xs font-medium text-muted-foreground">保存先</p>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">保存する種類</p>
             <div className="relative grid grid-cols-2 rounded-full border border-border bg-muted p-1 shadow-inner">
               <div
                 className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-card shadow-sm transition-transform duration-200 ${

@@ -38,9 +38,9 @@ function summarizeOgp(conflict: ImportConflict, side: "existing" | "imported") {
 }
 
 function formatDifferenceTitle(fields: ImportConflict["fields"]) {
-  if (fields.length === 1) return `${fieldLabels[fields[0]]}が違います`;
-  if (fields.length === 2) return `${fieldLabels[fields[0]]}と${fieldLabels[fields[1]]}が違います`;
-  return "内容が違います";
+  if (fields.length === 1) return `${fieldLabels[fields[0]]}に違いがあります`;
+  if (fields.length === 2) return `${fieldLabels[fields[0]]}と${fieldLabels[fields[1]]}に違いがあります`;
+  return "内容に違いがあります";
 }
 
 function getConflictPreviewText(conflict: ImportConflict) {
@@ -160,16 +160,16 @@ export function BackupImportReview({
   const keepCount = preview.conflictCount - replaceCount;
   const unchangedCount = preview.duplicateCount - preview.conflictCount;
   const stepOneLines = [
-    `内容が一致 ${Math.max(unchangedCount, 0)}件`,
-    `内容に差異あり ${preview.conflictCount}件`,
-    `新規投稿 ${preview.addedCount}件`,
+    `同じ内容 ${Math.max(unchangedCount, 0)}件`,
+    `確認が必要 ${preview.conflictCount}件`,
+    `新しく追加 ${preview.addedCount}件`,
   ].filter(Boolean);
   const finalSummaryRows = [
     { label: "バックアップ内の投稿", value: `${backupPostCount}件` },
-    { label: "そのまま使う", value: `${Math.max(unchangedCount, 0)}件` },
-    { label: "現行の内容を残す", value: `${Math.max(keepCount, 0)}件` },
-    { label: "バックアップで置き換える", value: `${replaceCount}件` },
-    { label: "新しく追加する", value: `${preview.addedCount}件` },
+    { label: "同じ内容のため変更なし", value: `${Math.max(unchangedCount, 0)}件` },
+    { label: "今のアプリの内容を残す", value: `${Math.max(keepCount, 0)}件` },
+    { label: "バックアップの内容にする", value: `${replaceCount}件` },
+    { label: "バックアップから追加", value: `${preview.addedCount}件` },
   ];
 
   useEffect(() => {
@@ -232,7 +232,7 @@ export function BackupImportReview({
           </div>
           <div className="text-center">
             <p className="text-lg font-semibold tracking-[0] text-foreground">バックアップの復元</p>
-            <p className="mt-1 text-xs text-muted-foreground">バックアップファイルを確認して、データを復元します</p>
+            <p className="mt-1 text-xs text-muted-foreground">バックアップファイルを確認して、復元する内容を選びます</p>
           </div>
           <div className="w-9" />
         </div>
@@ -245,8 +245,8 @@ export function BackupImportReview({
               <StepHeader
                 step={1}
                 totalSteps={totalSteps}
-                title="データの復元範囲について"
-                description="まず、本バックアップで復元される項目とされない項目を確認してください。"
+                title="復元される内容"
+                description="このバックアップで復元される内容と、復元されない内容を確認してください。"
               />
               <div className="space-y-4 px-5 py-5">
                 <RestoreCard title="復元される">
@@ -266,19 +266,19 @@ export function BackupImportReview({
                     ))}
                   </div>
                 </RestoreCard>
-                <RestoreCard title="復元されない">
+                <RestoreCard title="復元されない内容">
                   <div className="flex items-center gap-3 rounded-2xl bg-secondary/75 px-3 py-3 text-sm text-foreground">
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-amber-300">
                       <ImageOff size={17} />
                     </span>
-                    投稿済みの写真
+                    投稿に添付した写真・動画の本体
                   </div>
                 </RestoreCard>
                 <RestoreCard title="復元の手順">
                   <div className="mt-2 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                    <p>1. バックアップファイルの内容を確認します。</p>
-                    <p>2. 重複データがある場合、「現行」か「バックアップ」どちらかを選択します。</p>
-                    <p>3. 復元内容の確認をして復元を開始</p>
+                    <p>1. バックアップの内容を確認します。</p>
+                    <p>2. 同じ投稿がある場合、今のアプリかバックアップのどちらの内容を残すか選びます。</p>
+                    <p>3. 最後に復元内容を確認して開始します。</p>
                   </div>
                 </RestoreCard>
               </div>
@@ -322,7 +322,7 @@ export function BackupImportReview({
               <StepHeader
                 step={3}
                 totalSteps={totalSteps}
-                title="内容が違う投稿の選択"
+                title="確認が必要な投稿の選択"
                 description="このバックアップには、選択が必要な投稿はありません。"
               />
               <div className="space-y-4 px-5 py-5">
@@ -332,9 +332,9 @@ export function BackupImportReview({
                       <Check size={18} />
                     </span>
                     <div>
-                      <p className="text-sm font-semibold text-foreground">すべての重複投稿の内容が一致しています。</p>
+                      <p className="text-sm font-semibold text-foreground">すでにある投稿の内容がすべて一致しています。</p>
                       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                        現行かバックアップを選ぶ必要はありません。このまま次へ進んでください。
+                        今のアプリかバックアップを選ぶ必要はありません。このまま次へ進んでください。
                       </p>
                     </div>
                   </div>
@@ -348,11 +348,11 @@ export function BackupImportReview({
               <StepHeader
                 step={3}
                 totalSteps={totalSteps}
-                title={conflictStepView === "mode" ? "選び方の選択" : "内容が違う投稿の選択"}
+                title={conflictStepView === "mode" ? "残す内容の選択" : "確認が必要な投稿の選択"}
                 description={
                   conflictStepView === "mode"
-                    ? "先に、差異がある投稿をどう選ぶか決めます。"
-                    : "一覧から投稿を選び、その投稿内でどちらの内容を残すか選びます。"
+                    ? "先に、違いがある投稿をどう扱うか選びます。"
+                    : "一覧から投稿を選び、それぞれ残す内容を選びます。"
                 }
               />
               <div className="space-y-4 px-5 py-5">
@@ -370,9 +370,9 @@ export function BackupImportReview({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold">すべて現行の内容を残す</p>
+                          <p className="text-sm font-semibold">すべて今のアプリの内容を残す</p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            差異がある投稿は、すべて今アプリにある内容を使います。
+                            違いがある投稿は、今アプリにある内容をそのまま残します。
                           </p>
                         </div>
                         {selectionMode === "all-existing" ? (
@@ -394,9 +394,9 @@ export function BackupImportReview({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold">すべてバックアップで置き換える</p>
+                          <p className="text-sm font-semibold">すべてバックアップの内容にする</p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            差異がある投稿は、すべてバックアップ内の内容を使います。
+                            違いがある投稿は、バックアップ内の内容に置き換えます。
                           </p>
                         </div>
                         {selectionMode === "all-imported" ? (
@@ -418,9 +418,9 @@ export function BackupImportReview({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold">個別に選択する</p>
+                          <p className="text-sm font-semibold">個別に選ぶ</p>
                           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            次の画面で投稿を選び、それぞれ現行かバックアップを選びます。
+                            次の画面で投稿ごとに、今の内容かバックアップの内容を選びます。
                           </p>
                         </div>
                         {selectionMode === "individual" ? (
@@ -451,12 +451,12 @@ export function BackupImportReview({
                                     ? "bg-primary/20 text-primary"
                                     : "bg-secondary text-muted-foreground"
                                 }`}>
-                                  {selectedChoice === "use-imported" ? "バックアップ" : "現行"}
+                                  {selectedChoice === "use-imported" ? "バックアップ" : "今の内容"}
                                 </span>
                               </div>
                               <div className="mt-3 grid gap-2">
                                 <div className="rounded-2xl border border-border bg-card/75 p-3">
-                                  <p className="text-[11px] font-semibold text-muted-foreground">現行</p>
+                                  <p className="text-[11px] font-semibold text-muted-foreground">今の内容</p>
                                   <p className="mt-1 break-words text-xs leading-relaxed text-foreground">
                                     {getSidePreviewText(conflict, "existing")}
                                   </p>
@@ -478,7 +478,7 @@ export function BackupImportReview({
                                       : "border-border bg-card/80 text-foreground hover:bg-muted"
                                   }`}
                                 >
-                                  現行を残す
+                                  今の内容を残す
                                 </button>
                                 <button
                                   type="button"
@@ -489,7 +489,7 @@ export function BackupImportReview({
                                       : "border-border bg-card/80 text-foreground hover:bg-muted"
                                   }`}
                                 >
-                                  バックアップ
+                                  バックアップの内容にする
                                 </button>
                               </div>
                               {conflict.mergedTags.length > 0 ? (
@@ -515,25 +515,25 @@ export function BackupImportReview({
               <StepHeader
                 step={4}
                 totalSteps={totalSteps}
-                title="設定と注意事項の確認"
-                description="投稿以外に変わる内容と、戻らないものを確認します。"
+                title="設定と復元されない内容"
+                description="投稿以外に変わる内容と、復元されない内容を確認します。"
               />
               <div className="space-y-4 px-5 py-5">
                 <div className="rounded-[24px] border border-border bg-card p-4">
-                  <p className="text-sm font-semibold text-foreground">表示設定も変わります</p>
+                  <p className="text-sm font-semibold text-foreground">表示設定はバックアップ時点に戻ります</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
                     {["テーマ", "非表示タグ", "タグ候補", "投稿カードの並び順"].map((item) => (
                       <span key={item} className="rounded-full bg-secondary px-3 py-1.5">{item}</span>
                     ))}
                   </div>
                   <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                    これらの表示設定もバックアップの内容に変わります。
+                    テーマなどの表示設定も、バックアップに保存されている内容へ変わります。
                   </p>
                 </div>
                 <div className="rounded-[24px] border border-border bg-card p-4">
-                  <p className="text-sm font-semibold text-foreground">戻らないもの</p>
+                  <p className="text-sm font-semibold text-foreground">復元されない内容</p>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    写真や動画の本体は復元されません。
+                    写真や動画の本体はバックアップに含まれていないため復元されません。
                   </p>
                 </div>
               </div>
@@ -546,7 +546,7 @@ export function BackupImportReview({
                 step={5}
                 totalSteps={totalSteps}
                 title="最終確認して復元"
-                description="復元内容を確認し、問題なければ復元します。"
+                description="復元内容を確認し、問題なければ開始します。"
               />
               <div className="space-y-4 px-5 py-5">
                 <div className="rounded-[24px] border border-border bg-card p-4">
@@ -561,7 +561,7 @@ export function BackupImportReview({
                 </div>
                 <div className="rounded-[24px] border border-border bg-card p-4">
                   <p className="text-sm leading-relaxed text-muted-foreground">
-                    表示設定もバックアップの内容に変わります。写真や動画の本体は復元されません。
+                    表示設定はバックアップに保存されている内容へ変わります。写真や動画の本体は復元されません。
                   </p>
                 </div>
               </div>
@@ -620,7 +620,7 @@ export function BackupImportReview({
                 戻る
               </AppButton>
               <AppButton type="button" onClick={onConfirm} disabled={isBusy}>
-                復元
+                復元を開始
               </AppButton>
               </div>
             )}

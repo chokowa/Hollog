@@ -685,7 +685,7 @@ export function ImageViewer({ images, initialIndex = 0, originRect, getOriginRec
         <>
           <button
             type="button"
-            aria-label="コピー menu を閉じる"
+            aria-label="コピー用メニューを閉じる"
             className="fixed inset-0 z-[109] cursor-default bg-transparent"
             onPointerDown={(e) => {
               e.preventDefault();

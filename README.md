@@ -36,6 +36,16 @@ npm run audit:ui
 
 これは実描画ではなく、タップ、長押し、横スクロール、固定 UI の重なりなどをコード上から見て `pass / warn / fail` を返します。`audit:ui` は HOME とカレンダーをまとめて確認します。`warn` が出た箇所を優先して手動テストすると、確認範囲をかなり絞れます。
 
+## Design Rules
+
+開発中のデザイン判断は [DESIGN.md](DESIGN.md) を基準にします。Android / Capacitor 優先、HOMEタイムライン主役、ローカル保存の安心感を軸に、色・レイアウト・操作・検証のルールをまとめています。
+
+デザインやUIを触った後の基本チェック:
+
+```bash
+npm run design:check
+```
+
 ## Notes
 
 - Android / Capacitor を優先する方針です。

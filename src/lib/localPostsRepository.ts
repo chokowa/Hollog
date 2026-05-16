@@ -168,7 +168,7 @@ export const localPostsRepository: PostsRepository = {
     const current = await database.get(POSTS_STORE_NAME, id);
 
     if (!current) {
-      throw new Error("Post not found");
+      throw new Error("投稿が見つかりませんでした。");
     }
 
     const normalizedCurrent = normalizePost(current as LegacyPost);
@@ -189,7 +189,7 @@ export const localPostsRepository: PostsRepository = {
     const current = await database.get(POSTS_STORE_NAME, id);
 
     if (!current) {
-      throw new Error("Post not found");
+      throw new Error("投稿が見つかりませんでした。");
     }
 
     const nextPost: Post = {

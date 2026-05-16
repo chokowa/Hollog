@@ -75,7 +75,7 @@ export function SwipeConfirmSheet({
         <div className="mb-4 rounded-2xl bg-secondary p-2">
           <div className="relative h-14 touch-none overflow-hidden rounded-2xl bg-muted/50">
             <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs font-medium text-muted-foreground">
-              右へスワイプ
+              右へスワイプして確認
             </div>
             <div
               className={`absolute left-1 top-1 flex h-12 touch-none items-center gap-2 rounded-2xl bg-red-500 px-4 text-sm font-medium text-white shadow-lg select-none ${isDragging ? "" : "transition-transform"}`}

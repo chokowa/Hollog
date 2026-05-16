@@ -240,6 +240,60 @@ function decodeHtml(value: string) {
   return document.documentElement.textContent?.trim() ?? value;
 }
 
+function getHeaderValue(headers: Record<string, string> | undefined, name: string) {
+  if (!headers) return "";
+  const lowerName = name.toLowerCase();
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === lowerName);
+  return key ? headers[key] : "";
+}
+
+function getCharsetFromContentType(value: string) {
+  return value.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1]?.trim() ?? "";
+}
+
+function getCharsetFromHtmlStart(value: string) {
+  return value.match(/<meta[^>]+charset\s*=\s*["']?([^"'\s/>]+)/i)?.[1]?.trim()
+    || value.match(/<meta[^>]+content\s*=\s*["'][^"']*charset=([^"'\s;]+)/i)?.[1]?.trim()
+    || "";
+}
+
+function normalizeCharset(value: string) {
+  const charset = value.trim().toLowerCase().replace(/_/g, "-");
+  if (charset === "x-sjis" || charset === "sjis" || charset === "ms-kanji" || charset === "windows-31j") {
+    return "shift_jis";
+  }
+  if (charset === "eucjp") return "euc-jp";
+  if (charset === "utf8") return "utf-8";
+  return charset;
+}
+
+function decodeBytes(bytes: Uint8Array, charset: string) {
+  try {
+    return new TextDecoder(normalizeCharset(charset) || "utf-8").decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
+function base64ToBytes(value: string) {
+  const binary = atob(value.replace(/\s/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function decodeHtmlResponse(data: string, headers: Record<string, string> | undefined) {
+  const bytes = base64ToBytes(data);
+  const contentTypeCharset = getCharsetFromContentType(getHeaderValue(headers, "content-type"));
+  const firstPass = decodeBytes(bytes, contentTypeCharset || "utf-8");
+  const metaCharset = getCharsetFromHtmlStart(firstPass);
+  return metaCharset && normalizeCharset(metaCharset) !== normalizeCharset(contentTypeCharset)
+    ? decodeBytes(bytes, metaCharset)
+    : firstPass;
+}
+
 function parseOgpHtml(html: string, pageUrl: string): OgpPreview | null {
   const parser = new DOMParser();
   const document = parser.parseFromString(html, "text/html");
@@ -332,7 +386,7 @@ function toYouTubeOgp(data: YouTubeOEmbed): OgpPreview | null {
 
 function toXOgp(data: XOEmbed): OgpPreview | null {
   const tweetText = data.html ? decodeHtml(data.html).replace(/\s+/g, " ") : "";
-  const title = tweetText || (data.author_name ? `${data.author_name} on X` : "X post");
+  const title = tweetText || (data.author_name ? `${data.author_name} のX投稿` : "Xの投稿");
   return {
     title,
     description: data.author_name,
@@ -490,7 +544,7 @@ async function fetchOgpViaNativeHttp(url: string, options?: FetchOgpPreviewOptio
   for (const headers of headerCandidates) {
     const response = await CapacitorHttp.get({
       url,
-      responseType: "text",
+      responseType: "arraybuffer",
       headers: withNoCacheHeaders({ ...headers }, options?.bypassCache),
     });
     if (response.status < 200 || response.status >= 400 || typeof response.data !== "string") {
@@ -498,7 +552,7 @@ async function fetchOgpViaNativeHttp(url: string, options?: FetchOgpPreviewOptio
     }
 
     const pageUrl = response.url || url;
-    const html = response.data.slice(0, OGP_HTML_MAX_LENGTH);
+    const html = decodeHtmlResponse(response.data, response.headers).slice(0, OGP_HTML_MAX_LENGTH);
     const preview = isAmazonUrl(pageUrl) || isAmazon
       ? parseAmazonHtml(html, pageUrl)
       : parseOgpHtml(html, pageUrl);

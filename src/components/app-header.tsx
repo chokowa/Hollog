@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, Search, RefreshCcw, X } from "lucide-react";
+import { Search, RefreshCcw, X } from "lucide-react";
 
 type AppHeaderProps = {
   onRefresh: () => void | Promise<void>;
-  onSettingsClick?: () => void;
   onTimelineTopRequest: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -14,7 +13,6 @@ type AppHeaderProps = {
 
 export function AppHeader({
   onRefresh,
-  onSettingsClick,
   onTimelineTopRequest,
   searchQuery,
   onSearchChange,
@@ -54,13 +52,6 @@ export function AppHeader({
             title="検索"
           >
             {isSearchOpen ? <X size={20} /> : <Search size={20} />}
-          </button>
-          <button
-            onClick={onSettingsClick}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground active:scale-95"
-            title="設定"
-          >
-            <Settings size={20} />
           </button>
           <button
             onClick={handleRefresh}

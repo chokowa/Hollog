@@ -263,7 +263,7 @@ export function ShareImport({
         thumbnailBlobs: preparedThumbnailBlobs,
       });
     } catch {
-      onSaveError?.("保存できませんでした。");
+      onSaveError?.("共有内容を保存できませんでした。");
       return;
     } finally {
       setIsPreparingImages(false);
@@ -287,7 +287,7 @@ export function ShareImport({
             <X size={20} />
           </button>
           <h1 className="min-w-0 flex-1 truncate text-center text-base font-medium text-foreground">
-            外部から保存
+            共有から保存
           </h1>
           <button
             type="button"
@@ -357,7 +357,7 @@ export function ShareImport({
                 <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl border border-border bg-black/5">
                   {brokenPreviewIds.has(item.id) ? (
                     <div className="flex h-full w-full items-center justify-center bg-muted px-3 text-center text-xs text-muted-foreground">
-                      元ファイルを読み込めません
+                      端末の元画像を読み込めませんでした
                     </div>
                   ) : (
                     <>
@@ -433,7 +433,7 @@ export function ShareImport({
                     aria-label="コピーした画像を貼り付け"
                   >
                     <Clipboard size={18} />
-                    <span className="text-[11px] font-medium">貼付</span>
+                    <span className="text-[11px] font-medium">貼り付け</span>
                   </button>
                 )}
               </div>
@@ -459,7 +459,7 @@ export function ShareImport({
         />
 
         <section className="rounded-[22px] border border-border bg-card p-4 shadow-sm">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">保存先</p>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">保存する種類</p>
           <div className="relative grid grid-cols-2 rounded-full border border-border bg-muted p-1 shadow-inner">
             <div
               className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-card shadow-sm transition-transform duration-200 ${

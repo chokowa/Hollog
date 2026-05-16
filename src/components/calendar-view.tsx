@@ -719,7 +719,7 @@ export function CalendarView({
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-foreground">タグで絞り込み</p>
-                    <p className="text-xs text-muted-foreground">全投稿日から選べます</p>
+                    <p className="text-xs text-muted-foreground">すべての投稿日から選べます</p>
                   </div>
                   {resolvedActiveTags.length > 0 && (
                     <button
@@ -902,7 +902,7 @@ export function CalendarView({
                 onClick={() => jumpToDate(toDateKeyFromParts(dateJumpParts))}
                 className="h-11 rounded-2xl bg-primary font-semibold text-primary-foreground shadow-sm transition active:scale-[0.99]"
               >
-                移動
+                この日に移動
               </button>
             </div>
           </div>

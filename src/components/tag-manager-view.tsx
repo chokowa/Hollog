@@ -222,7 +222,7 @@ export function TagManagerView({
   };
 
   const handleDeleteTag = (tagToRemove: string) => {
-    if (!confirm(`タグ候補 "${tagToRemove}" を削除しますか？\n投稿についているタグは消えません。`)) {
+    if (!confirm(`タグ候補「${tagToRemove}」を削除しますか？\n投稿についているタグはそのまま残ります。`)) {
       return;
     }
 
@@ -266,7 +266,7 @@ export function TagManagerView({
 
     const modeLabel = bulkMode === "append" ? "追加" : "置き換え";
     const confirmed = confirm(
-      `${selectedPostIds.length}件の投稿に対して、${selectedTags.length}件のタグを${modeLabel}します。\n適用しますか？`,
+      `選択した${selectedPostIds.length}件の投稿に、${selectedTags.length}件のタグを${modeLabel}します。\nこの内容で反映しますか？`,
     );
     if (!confirmed) return;
 
@@ -274,7 +274,7 @@ export function TagManagerView({
     if (!updated) return;
 
     setSelectedPostIds([]);
-    alert(`${updated.length}件の投稿へタグを適用しました。`);
+    alert(`${updated.length}件の投稿にタグを反映しました。`);
   };
 
   return (
@@ -291,7 +291,7 @@ export function TagManagerView({
           <div className="text-center">
             <h1 className="text-lg font-medium text-foreground">タグ管理</h1>
             <p className="text-xs text-muted-foreground">
-              {activeTab === "catalog" ? "タグ候補を管理" : "複数投稿へまとめて適用"}
+              {activeTab === "catalog" ? "タグ候補を管理" : "複数投稿へまとめてタグ付け"}
             </p>
           </div>
           <div className="w-16" />
@@ -468,9 +468,9 @@ export function TagManagerView({
             <section className="rounded-3xl border border-border bg-card p-4 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-foreground">作業状況</h2>
+                  <h2 className="text-sm font-semibold text-foreground">選択状況</h2>
                   <p className="text-sm text-muted-foreground">
-                    投稿 {selectedPostIds.length}件選択 / タグ {selectedTags.length}件選択 / 反映対象 {changedPreviewCount}件
+                    投稿 {selectedPostIds.length}件選択 / タグ {selectedTags.length}件選択 / 変更予定 {changedPreviewCount}件
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -486,7 +486,7 @@ export function TagManagerView({
                 <div className="border-b border-border px-5 py-4">
                   <h2 className="font-medium text-foreground">投稿を絞り込んで選ぶ</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    初期状態では未タグ投稿だけを表示しています。
+                    初期状態ではタグなしの投稿だけを表示しています。
                   </p>
                 </div>
 
@@ -545,8 +545,8 @@ export function TagManagerView({
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         { value: "all" as MediaFilter, label: "すべて" },
-                        { value: "with" as MediaFilter, label: "あり" },
-                        { value: "without" as MediaFilter, label: "なし" },
+                        { value: "with" as MediaFilter, label: "画像あり" },
+                        { value: "without" as MediaFilter, label: "画像なし" },
                       ].map((option) => (
                         <button
                           key={option.value}
@@ -571,20 +571,20 @@ export function TagManagerView({
                       onChange={(event) => setUntaggedOnly(event.target.checked)}
                       className="bocchi-checkbox h-4 w-4"
                     />
-                    <span className="text-sm text-foreground">未タグのみ表示</span>
+                    <span className="text-sm text-foreground">タグなしのみ表示</span>
                   </label>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
                   <p className="text-sm text-muted-foreground">
-                    表示 {filteredSelectableCount}件 / 表示中選択 {selectedVisibleCount}件
+                    表示 {filteredSelectableCount}件 / 表示中の選択 {selectedVisibleCount}件
                   </p>
                   <div className="flex gap-2">
                     <AppButton variant="ghost" className="h-9 rounded-full px-3 text-xs" onClick={selectVisiblePosts}>
                       表示中を選択
                     </AppButton>
                     <AppButton variant="ghost" className="h-9 rounded-full px-3 text-xs" onClick={clearVisiblePosts}>
-                      表示中を解除
+                      表示中の選択を解除
                     </AppButton>
                   </div>
                 </div>
@@ -765,7 +765,7 @@ export function TagManagerView({
 
             <section className="min-w-0 rounded-3xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-5 py-4">
-                <h2 className="font-medium text-foreground">適用設定とプレビュー</h2>
+                <h2 className="font-medium text-foreground">反映設定とプレビュー</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   既存タグを残すか、選択タグだけに置き換えるかを選びます。
                 </p>
@@ -781,7 +781,7 @@ export function TagManagerView({
                     },
                     {
                       value: "replace" as BulkMode,
-                      label: "既存タグを置き換え",
+                      label: "選択タグに置き換え",
                       description: "既存タグを外して、選択タグだけにします。",
                     },
                   ].map((option) => (
@@ -815,7 +815,7 @@ export function TagManagerView({
                       disabled={!canApply}
                       onClick={handleApply}
                     >
-                      {isBusy ? "適用中..." : "この内容で適用"}
+                      {isBusy ? "反映中..." : "タグを反映"}
                     </AppButton>
                   </div>
 
@@ -844,7 +844,7 @@ export function TagManagerView({
 
                           <div className="mt-3 grid gap-3 sm:grid-cols-2">
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">現在</p>
+                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">現在のタグ</p>
                               <div className="flex min-h-10 flex-wrap gap-1.5 rounded-xl bg-secondary p-2">
                                 {post.tags.length === 0 ? (
                                   <span className="text-xs text-muted-foreground">タグなし</span>
@@ -859,7 +859,7 @@ export function TagManagerView({
                             </div>
 
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">適用後</p>
+                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">反映後</p>
                               <div className="flex min-h-10 flex-wrap gap-1.5 rounded-xl bg-secondary p-2">
                                 {nextTags.length === 0 ? (
                                   <span className="text-xs text-muted-foreground">タグなし</span>

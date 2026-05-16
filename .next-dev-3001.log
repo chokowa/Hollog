@@ -1,0 +1,25 @@
+
+> bocchisns@0.1.0 dev
+> next dev --port 3001
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.0.241:3001
+✓ Ready in 399ms
+
+ GET / 200 in 256ms (next.js: 126ms, application-code: 130ms)
+ GET / 200 in 31ms (next.js: 3ms, application-code: 29ms)
+ GET / 200 in 31ms (next.js: 3ms, application-code: 28ms)
+✓ Compiled in 76ms
+ GET / 200 in 51ms (next.js: 32ms, application-code: 19ms)
+✓ Compiled in 56ms
+ GET / 200 in 67ms (next.js: 42ms, application-code: 25ms)
+✓ Compiled in 84ms
+ GET / 200 in 66ms (next.js: 38ms, application-code: 28ms)
+ GET / 200 in 87ms (next.js: 3ms, application-code: 85ms)
+✓ Compiled in 105ms
+ GET / 200 in 94ms (next.js: 56ms, application-code: 38ms)
+ GET / 200 in 75ms (next.js: 2ms, application-code: 72ms)
+✓ Compiled in 73ms
+ GET / 200 in 53ms (next.js: 33ms, application-code: 21ms)
+ GET / 200 in 74ms (next.js: 1977µs, application-code: 72ms)

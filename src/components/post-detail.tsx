@@ -84,14 +84,14 @@ export function PostDetail({
               className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
             >
               <Copy size={22} />
-              <span className="text-[11px] font-medium">本文コピー</span>
+              <span className="text-[11px] font-medium">本文をコピー</span>
             </button>
             <button
               onClick={onOpenX}
               className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
             >
               <ExternalLink size={22} />
-              <span className="text-[11px] font-medium">Xへ投稿</span>
+              <span className="text-[11px] font-medium">Xに投稿</span>
             </button>
             <button
               onClick={onMarkAsPosted}
@@ -121,7 +121,7 @@ export function PostDetail({
             className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-card px-4 py-3.5 text-red-600 shadow-sm transition-colors hover:bg-red-50"
           >
             <Trash2 size={18} className="text-red-500" />
-            <span className="font-medium">削除する</span>
+            <span className="font-medium">ゴミ箱に移動</span>
           </button>
         </div>
       </div>

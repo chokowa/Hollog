@@ -112,16 +112,16 @@ export function useBackupFlow({
       if (Capacitor.isNativePlatform()) {
         const result = await saveNativeJsonFile(fileName, content);
         if (result.cancelled) {
-          showToast("バックアップ保存をキャンセルしました。");
+          showToast("バックアップの保存をキャンセルしました。");
           return;
         }
       } else {
         await saveJsonTextFile(fileName, content);
       }
-      showToast(`${backup.posts.length}件の投稿をバックアップしました。`);
+      showToast(`${backup.posts.length}件の投稿をバックアップに保存しました。`);
     } catch (err) {
       const name = err instanceof DOMException ? err.name : "";
-      showToast(name === "AbortError" ? "バックアップ保存をキャンセルしました。" : "バックアップを保存できませんでした。");
+      showToast(name === "AbortError" ? "バックアップの保存をキャンセルしました。" : "バックアップを保存できませんでした。");
     } finally {
       setIsBackupBusy(false);
     }
@@ -135,7 +135,7 @@ export function useBackupFlow({
     try {
       const result = await importPosts(parsed.posts, { conflictChoices });
       if (!result) {
-        showToast("バックアップを復元できませんでした。");
+        showToast("バックアップの内容を復元できませんでした。");
         return;
       }
 
@@ -151,14 +151,14 @@ export function useBackupFlow({
       ]));
 
       const summary = [
-        `${result.addedCount}件を新しく追加`,
+        `${result.addedCount}件をバックアップから追加`,
         result.mergedTagCount > 0 ? `${result.mergedTagCount}件にタグを追加` : "",
-        result.duplicateCount > 0 ? `${result.duplicateCount}件は追加なし` : "",
-        result.overwrittenCount > 0 ? `${result.overwrittenCount}件をバックアップ内容で更新` : "",
+        result.duplicateCount > 0 ? `${result.duplicateCount}件は同じ内容のため変更なし` : "",
+        result.overwrittenCount > 0 ? `${result.overwrittenCount}件をバックアップの内容に更新` : "",
         result.conflictCount > result.overwrittenCount ? `${result.conflictCount - result.overwrittenCount}件は今の内容を保持` : "",
-        parsed.invalidPostCount > 0 ? `${parsed.invalidPostCount}件スキップ` : "",
+        parsed.invalidPostCount > 0 ? `${parsed.invalidPostCount}件は読み込めずスキップ` : "",
       ].filter(Boolean).join(" / ");
-      showToast(summary || "復元する新しい内容はありませんでした。");
+      showToast(summary || "バックアップから変更する内容はありませんでした。");
       setPendingBackupImport(null);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "バックアップファイルを読み込めませんでした。");
@@ -182,15 +182,15 @@ export function useBackupFlow({
       const parsed = parseHollogBackup(JSON.parse(await file.text()));
       const preview = await previewImportPosts(parsed.posts);
       if (!preview) {
-        showToast("バックアップ内容を確認できませんでした。");
+        showToast("バックアップの内容を確認できませんでした。");
         return;
       }
 
       setPendingBackupImport({ parsed, preview, choices: {} });
       showToast(
         preview.conflicts.length > 0
-          ? `${preview.conflicts.length}件は内容を確認してください。`
-          : "差異はありません。内容を確認して復元できます。",
+          ? `${preview.conflicts.length}件の投稿で、残す内容を選んでください。`
+          : "内容の違いはありません。確認後に復元できます。",
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : "バックアップファイルを読み込めませんでした。");
@@ -206,7 +206,7 @@ export function useBackupFlow({
     try {
       const opened = await openNativeJsonFile();
       if (opened.cancelled) {
-        showToast("復元をキャンセルしました。");
+        showToast("バックアップの復元をキャンセルしました。");
         return;
       }
       if (!opened.content) {
@@ -217,15 +217,15 @@ export function useBackupFlow({
       const parsed = parseHollogBackup(JSON.parse(opened.content));
       const preview = await previewImportPosts(parsed.posts);
       if (!preview) {
-        showToast("バックアップ内容を確認できませんでした。");
+        showToast("バックアップの内容を確認できませんでした。");
         return;
       }
 
       setPendingBackupImport({ parsed, preview, choices: {} });
       showToast(
         preview.conflicts.length > 0
-          ? `${preview.conflicts.length}件は内容を確認してください。`
-          : "差異はありません。内容を確認して復元できます。",
+          ? `${preview.conflicts.length}件の投稿で、残す内容を選んでください。`
+          : "内容の違いはありません。確認後に復元できます。",
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : "バックアップファイルを読み込めませんでした。");

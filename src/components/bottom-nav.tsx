@@ -196,7 +196,12 @@ export function BottomNav({
             setIsQuickMenuOpen(false);
             onPostClick();
           }}
-          className="timeline-post-fab fixed bottom-20 right-[max(1rem,calc((100vw-28rem)/2+1rem))] z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-black/20 will-change-transform transition duration-[260ms] ease-out hover:bg-primary/90 active:scale-95"
+          className="timeline-post-fab fixed bottom-20 right-[max(1rem,calc((100vw-28rem)/2+1rem))] z-50 flex h-14 w-14 items-center justify-center rounded-full border border-white/45 text-white shadow-[0_9px_22px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.60),inset_0_-1px_0_rgba(255,255,255,0.18)] will-change-transform transition duration-[260ms] ease-out active:scale-95"
+          style={{
+            background: "linear-gradient(135deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.12) 52%, rgba(255, 255, 255, 0.24))",
+            backdropFilter: "blur(4px) saturate(140%)",
+            WebkitBackdropFilter: "blur(4px) saturate(140%)",
+          }}
           aria-label="新規ポスト"
         >
           <Plus size={28} />

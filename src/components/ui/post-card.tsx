@@ -414,25 +414,25 @@ function PostCardComponent({
 
   const renderBrokenImage = (className: string) => (
     <div className={`flex items-center justify-center bg-muted px-4 text-center text-xs text-muted-foreground ${className}`}>
-      元ファイルを読み込めません
+      端末の元画像を読み込めませんでした
     </div>
   );
 
   const getMediaStorageBadge = (index: number): { label: string; Icon: LucideIcon } => {
     const legacyImageCount = (post.imageBlobs?.length ?? 0) + (post.imageBlob ? 1 : 0);
     if (index < legacyImageCount) {
-      return { label: "保存済み", Icon: Database };
+      return { label: "アプリ内に保存済み", Icon: Database };
     }
 
     const mediaRef = post.mediaRefs?.[index - legacyImageCount];
     if (mediaRef?.storage === "device-reference") {
-      return { label: "端末の画像を参照", Icon: LinkIcon };
+      return { label: "端末内の元画像", Icon: LinkIcon };
     }
     if (mediaRef?.storage === "app-local-copy") {
-      return { label: "アプリ内保存", Icon: Archive };
+      return { label: "アプリ内に保存済み", Icon: Archive };
     }
 
-    return { label: "保存済み", Icon: Database };
+    return { label: "アプリ内に保存済み", Icon: Database };
   };
 
   const renderMediaStorageBadge = (index: number) => {
@@ -724,7 +724,7 @@ function PostCardComponent({
           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <Copy size={15} />
-          <span>本文+URLをコピー</span>
+          <span>本文とURLをコピー</span>
         </button>
         <button
           type="button"
@@ -732,7 +732,7 @@ function PostCardComponent({
           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <Share size={15} />
-          <span>Xへ投稿</span>
+          <span>Xに投稿</span>
         </button>
         <button
           type="button"
@@ -824,7 +824,7 @@ function PostCardComponent({
                       ? "bg-muted text-muted-foreground/60 hover:bg-muted"
                       : "bg-secondary text-muted-foreground hover:bg-muted hover:text-foreground"
                   } ${isDetail ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-[11px]"}`}
-                  title={`#${tag}で絞り込み`}
+                  title={`#${tag} で絞り込み`}
                 >
                   #{tag}
                 </button>

@@ -123,14 +123,14 @@ export function SettingsView({
                 className="gap-2"
               >
                 <Download size={16} />
-                バックアップから復元
+                バックアップを確認して復元
               </AppButton>
             </div>
             <p className="text-sm text-muted-foreground">
               投稿、URL、タグ、プレビュー、表示設定を1つのファイルに保存できます。機種変更や念のための控えに使えます。
             </p>
             <div className="rounded-xl border border-border bg-secondary px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-              写真や動画の本体はまだ保存されません。復元時は同じ投稿を二重に増やさず、本文などが違うものは確認してから反映します。
+              写真や動画の本体はバックアップに含まれません。復元時は同じ投稿を二重に増やさず、本文などが違うものは確認してから反映します。
             </div>
             <input
               ref={importInputRef}
@@ -174,7 +174,7 @@ export function SettingsView({
           <div className="p-5">
             <label className="flex items-center justify-between gap-4 rounded-xl border border-border p-4 transition-colors hover:bg-muted/30">
               <span className="text-sm font-medium text-foreground">
-                投稿済みをポスト/クリップに表示しない
+                投稿済みをポスト・クリップ一覧に表示しない
               </span>
               <input
                 type="checkbox"

@@ -24,7 +24,7 @@ function loadImage(blob: Blob) {
     image.onload = () => resolve({ image, revoke: () => URL.revokeObjectURL(objectUrl) });
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("Failed to decode image"));
+      reject(new Error("画像を読み込めませんでした。"));
     };
     image.src = objectUrl;
   });

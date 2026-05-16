@@ -627,7 +627,7 @@ export function PostFeed({
   };
   const emptyTrash = async () => {
     if (posts.length === 0) return;
-    if (!confirm(`${posts.length}件の投稿を完全に削除します。この操作は元に戻せません。`)) return;
+    if (!confirm(`ゴミ箱内の${posts.length}件を完全に削除します。削除後は元に戻せません。`)) return;
     await onEmptyTrash();
   };
   const getMediaOriginRect = useCallback((index: number) => {
@@ -828,14 +828,14 @@ export function PostFeed({
                     </span>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    ここでは投稿を復元できます。完全削除するまで、他の画面には表示されません。
+                    ゴミ箱に移動した投稿はここから戻せます。完全削除するまで、他の画面には表示されません。
                   </p>
                 </div>
               </div>
               <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ShieldCheck size={14} />
-                  完全削除は確認後に実行されます
+                  空にする前に確認があります
                 </p>
                 <div className="flex shrink-0 justify-end gap-2">
                   <button
@@ -854,7 +854,7 @@ export function PostFeed({
                     className="inline-flex h-9 items-center gap-1.5 rounded-full border border-red-500/35 bg-red-500/10 px-3 text-xs font-semibold text-red-500 transition hover:bg-red-500 hover:text-white disabled:opacity-40"
                   >
                     <Trash2 size={14} />
-                    空にする
+                    ゴミ箱を空にする
                   </button>
                 </div>
               </div>
@@ -875,7 +875,7 @@ export function PostFeed({
                 </div>
                 <div>
                   <p className="font-semibold text-foreground">ゴミ箱は空です</p>
-                  <p className="mt-1 text-xs leading-relaxed">削除した投稿はここに集まり、必要なら戻せます。</p>
+                  <p className="mt-1 text-xs leading-relaxed">ゴミ箱に移動した投稿はここに集まり、必要なら戻せます。</p>
                 </div>
               </div>
             ) : "まだ投稿がありません。"}
@@ -964,7 +964,7 @@ export function PostFeed({
                             style={{ minHeight: pendingDeletedHeights[post.id] ?? 96 }}
                           >
                             <div className="min-w-0">
-                              <p className="font-medium">1件削除しました</p>
+                              <p className="font-medium">ゴミ箱に移動します</p>
                               <p className="mt-1 truncate text-xs text-muted-foreground">{pendingDeletedPost.body || pendingDeletedPost.url || "投稿"}</p>
                             </div>
                             <button
@@ -1016,7 +1016,7 @@ export function PostFeed({
                               </span>
                               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-background px-2 py-1 text-[11px] font-medium">
                                 <Info size={12} />
-                                非表示
+                                他画面で非表示
                               </span>
                             </div>
                             {card}

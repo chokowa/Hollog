@@ -32,7 +32,7 @@ export function TagContextMenu({
     { action: "copy" as const, label: "タグ名をコピー", icon: Copy },
     { action: "visibility" as const, label: hidden ? "再表示" : "非表示", icon: hidden ? Eye : EyeOff },
     { action: "manage" as const, label: "タグ管理", icon: Settings2 },
-    { action: "delete" as const, label: "投稿削除", icon: Trash2, destructive: true },
+    { action: "delete" as const, label: "このタグの投稿をゴミ箱へ", icon: Trash2, destructive: true },
   ];
 
   return createPortal(
